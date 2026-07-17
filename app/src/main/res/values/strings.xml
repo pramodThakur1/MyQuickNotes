@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GoNotes Pro</string>
+
+    <!-- UI General -->
+    <string name="search_hint">Search Notes</string>
+    <string name="search_trash_hint">Search Trash…</string>
+    <string name="cancel">Cancel</string>
+    <string name="delete">Delete</string>
+    <string name="remove">Remove</string>
+    <string name="restore">Restore</string>
+    <string name="create">Create</string>
+    <string name="untitled_note">Untitled Note</string>
+    <string name="default_notebook">Default notebook</string>
+    <string name="start_typing">Start typing...</string>
+
+    <!-- Toasts & Messages -->
+    <string name="msg_image_added">Image Added! 🖼️</string>
+    <string name="msg_load_image_failed">Failed to load image</string>
+    <string name="msg_photo_captured">Photo Captured! 📸</string>
+    <string name="msg_file_saved">File Saved Successfully! 💾</string>
+    <string name="msg_file_save_failed">Failed to save file</string>
+    <string name="msg_reading_note">Reading Note... 🔊</string>
+    <string name="msg_note_empty">Note is empty!</string>
+    <string name="msg_bin_emptied">Recycle Bin Emptied!</string>
+    <string name="msg_moved_to_bin">Moved to Recycle Bin!</string>
+    <string name="msg_wrong_pin">Wrong PIN!</string>
+    <string name="msg_reminder_set">Reminder Set! ⏰</string>
+    <string name="msg_notes_updated">%1$d notes updated!</string>
+    <string name="msg_notes_restored">%1$d notes restored!</string>
+    <string name="msg_note_restored">Note Restored!</string>
+    <string name="msg_image_removed">Image Removed</string>
+    <string name="msg_tick_boxes_hidden">Tick Boxes Hidden</string>
+    <string name="msg_tick_boxes_visible">Tick Boxes Visible</string>
+    <string name="msg_category_selected">Category: %1$s</string>
+    <string name="msg_category_created">Category Created: %1$s</string>
+    <string name="msg_empty_note_bin">Empty note moved to bin!</string>
+    <string name="msg_stopped_reading">Stopped Reading</string>
+
+    <!-- Dialogs -->
+    <string name="dialog_empty_bin_title">Empty Recycle Bin?</string>
+    <string name="dialog_empty_bin_msg">All notes in the bin will be permanently deleted. This action cannot be undone.</string>
+    <string name="dialog_empty_bin_btn">Empty Bin</string>
+
+    <string name="dialog_move_to_bin_title">Move to Recycle Bin</string>
+    <string name="dialog_move_to_bin_msg">Are you sure you want to move this note to the bin?</string>
+
+    <string name="dialog_bin_note_title">Note in Recycle Bin</string>
+    <string name="dialog_bin_note_msg">You cannot edit a trashed note. Restore it first.</string>
+    <string name="dialog_bin_note_restore">Restore Note</string>
+    <string name="dialog_bin_note_delete">Delete Permanently</string>
+
+    <string name="dialog_locked_note_title">Locked Note 🔒</string>
+    <string name="dialog_pin_hint">Enter PIN</string>
+    <string name="dialog_unlock">Unlock</string>
+
+    <string name="dialog_set_pin_title">Set PIN Lock 🔒</string>
+    <string name="dialog_set_pin_hint">Example: 1234</string>
+    <string name="dialog_lock_note_btn">Lock Note</string>
+
+    <string name="dialog_category_title">Select Category</string>
+    <string name="dialog_add_category">Add New Category</string>
+    <string name="dialog_new_category_title">New Category</string>
+    <string name="dialog_category_name_hint">Category Name</string>
+
+    <string name="dialog_remove_image_title">Remove Image</string>
+    <string name="dialog_remove_image_msg">Are you sure you want to remove this image?</string>
+
+    <string name="dialog_delete_notes_title">Delete Notes</string>
+    <string name="dialog_move_notes_title">Move Notes</string>
+
+    <string name="dialog_restore_notes_title">Restore Notes</string>
+    <string name="dialog_restore_notes_msg">Restore selected notes to main list?</string>
+
+    <!-- Note Types Dialog -->
+    <string name="new_note_heading">Create New Note</string>
+    <string name="normal_note_title">Normal Note</string>
+    <string name="normal_note_subtitle">Write notes, make lists, or add images</string>
+
+    <!-- Menu Items -->
+    <string name="menu_all_notes">📝  All Notes</string>
+    <string name="menu_normal_notes">📝  Simple Notes</string>
+    <string name="menu_bin">🗑️  Recycle Bin</string>
+    <string name="menu_theme">🌓  Switch Theme</string>
+    <string name="menu_language">🌐  Change Language</string>
+    <string name="menu_manage_categories">📁  Manage Categories</string>
+    <string name="manage_small">⚙️ Manage</string>
+
+
+    <string name="menu_change_category">Change Category</string>
+    <string name="menu_make_copy">Make a copy</string>
+    <string name="menu_send">Send</string>
+    <string name="menu_share_pdf">Share as PDF</string>
+    <string name="menu_share_text">Share as Text File</string>
+    <string name="menu_export_source">Export as Source File</string>
+    <string name="menu_move_to_bin">Move to Bin</string>
+
+    <!-- Empty States -->
+    <string name="empty_state_bin">Bin is empty! 🗑️</string>
+    <string name="empty_state_category">No notes in %1$s! 📝</string>
+    <string name="empty_state_search">No results for \'%1$s\' 🔍</string>
+    <string name="empty_state_no_notes">No notes yet! 📝</string>
+
+    <!-- Sharing & Export -->
+    <string name="share_via">Share Note via</string>
+    <string name="share_pdf_via">Share PDF via</string>
+    <string name="share_text_via">Share Text File via</string>
+
+    <!-- Notifications -->
+    <string name="notif_reminder_title">⏰ Reminder: %1$s</string>
+    <string name="notif_reminder_msg">Open GoNotes Pro to check it out!</string>
+
+    <!-- Selection -->
+    <string name="selected_count">%1$d selected</string>
+    <string name="deselect_all">Deselect All</string>
+    <string name="select_all">Select All</string>
+
+    <!-- Shortcuts -->
+    <string name="shortcut_new_note_short">New Note</string>
+    <string name="shortcut_new_note_long">Create a new note</string>
+</resources>

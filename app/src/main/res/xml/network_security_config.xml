@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Force HTTPS globally and disable insecure HTTP (Cleartext) -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Optional: Allow user certificates ONLY if specifically needed for testing,
+         but for production, system trust for Google APIs is best -->
+</network-security-config>

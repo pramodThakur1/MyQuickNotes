@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <attr name="appBackgroundColor" format="color" />
+    <attr name="appPrimaryTextColor" format="color" />
+    <attr name="appSecondaryTextColor" format="color" />
+    <attr name="appSearchBackgroundColor" format="color" />
+    <attr name="appDrawerBackgroundColor" format="color" />
+    <attr name="appBottomBarColor" format="color" />
+</resources>

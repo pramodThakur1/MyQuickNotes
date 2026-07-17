@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:padding="4dp">
+
+    <LinearLayout
+        android:id="@+id/noteContentContainer"
+        android:layout_width="match_parent"
+        android:layout_height="170dp"
+        android:orientation="vertical"
+        android:padding="14dp"
+        android:background="@drawable/note_card_bg">
+
+        <TextView
+            android:id="@+id/gridItemTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/primaryTextColor"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:maxLines="2"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/gridItemSnippet"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:textColor="@color/secondaryTextColor"
+            android:textSize="13sp"
+            android:maxLines="4"
+            android:ellipsize="end" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/gridItemDate"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="end"
+            android:textColor="@color/secondaryTextColor"
+            android:textSize="9sp"
+            android:alpha="0.7" />
+    </LinearLayout>
+
+    <ImageView
+        android:id="@+id/selectionCheckmark"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentRight="true"
+        android:layout_marginTop="2dp"
+        android:layout_marginRight="2dp"
+        android:src="@drawable/checkbox_custom"
+        android:visibility="gone"
+        android:contentDescription="Selected" />
+
+    <TextView
+        android:id="@+id/storageBadge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentRight="true"
+        android:layout_marginTop="6dp"
+        android:layout_marginRight="30dp"
+        android:text="Enc"
+        android:textSize="8sp"
+        android:textStyle="bold"
+        android:textColor="#FFFFFF"
+        android:paddingStart="5dp"
+        android:paddingEnd="5dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/iconPinned"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="📌"
+        android:textSize="16sp"
+        android:textColor="#8B0000"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentLeft="true"
+        android:layout_marginTop="8dp"
+        android:layout_marginLeft="8dp"
+        android:visibility="gone"
+        android:shadowColor="#40000000"
+        android:shadowDx="1"
+        android:shadowDy="1"
+        android:shadowRadius="2"/>
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_alignParentBottom="true"
+        android:layout_alignParentLeft="true"
+        android:layout_marginLeft="10dp"
+        android:layout_marginBottom="10dp">
+
+        <TextView
+            android:id="@+id/iconLocked"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🔒"
+            android:textSize="16sp"
+            android:visibility="gone"
+            android:layout_marginRight="6dp"/>
+
+        <TextView
+            android:id="@+id/iconAlarm"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⏰"
+            android:textSize="12sp"
+            android:visibility="gone"/>
+    </LinearLayout>
+
+</RelativeLayout>

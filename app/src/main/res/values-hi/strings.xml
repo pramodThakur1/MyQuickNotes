@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GoNotes Pro</string>
+
+    <!-- UI General -->
+    <string name="search_hint">टिप्पणियाँ खोजें</string>
+    <string name="search_trash_hint">कचra पेटी में खोजें…</string>
+    <string name="cancel">रद्द करें</string>
+    <string name="delete">मिटाएं</string>
+    <string name="remove">हटाएं</string>
+    <string name="restore">पुनर्स्थापित करें</string>
+    <string name="create">बनाएं</string>
+    <string name="untitled_note">बिना शीर्षक की टिप्पणी</string>
+    <string name="default_notebook">मुख्य पुस्तिका</string>
+    <string name="start_typing">लिखना शुरू करें...</string>
+
+    <!-- Toasts & Messages -->
+    <string name="msg_image_added">चित्र जोड़ दिया गया! 🖼️</string>
+    <string name="msg_load_image_failed">चित्र लोड करने में त्रुटि</string>
+    <string name="msg_photo_captured">चित्र ले लिया गया! 📸</string>
+    <string name="msg_file_saved">फ़ाइल सुरक्षित कर ली गई! 💾</string>
+    <string name="msg_file_save_failed">फ़ाइल सुरक्षित करने में विफल</string>
+    <string name="msg_reading_note">टिप्पणी पढ़ रहे हैं... 🔊</string>
+    <string name="msg_note_empty">टिप्पणी खाली है!</string>
+    <string name="msg_bin_emptied">रद्दी की टोकरी खाली कर दी गई!</string>
+    <string name="msg_moved_to_bin">रद्दी की टोकरी में भेजा गया!</string>
+    <string name="msg_wrong_pin">गलत गोपनीय कोड (PIN)!</string>
+    <string name="msg_reminder_set">अनुस्मारक सेट किया गया! ⏰</string>
+    <string name="msg_notes_updated">%1$d टिप्पणियाँ अपडेट की गईं!</string>
+    <string name="msg_notes_restored">%1$d टिप्पणियाँ वापस लाई गईं!</string>
+    <string name="msg_note_restored">टिप्पणी वापस लाई गई!</string>
+    <string name="msg_image_removed">चित्र हटा दिया गया</string>
+    <string name="msg_tick_boxes_hidden">निशान लगाने वाले बॉक्स छिपा दिए गए</string>
+    <string name="msg_tick_boxes_visible">निशan लगाने वाले बॉक्स दिखाई दे रहे हैं</string>
+    <string name="msg_category_selected">श्रेणी: %1$s</string>
+    <string name="msg_category_created">नयी श्रेणी बनाई गई: %1$s</string>
+    <string name="msg_empty_note_bin">खाली टिप्पणी को रद्दी में भेज दिया गया!</string>
+    <string name="msg_stopped_reading">पढ़ना बंद किया</string>
+
+    <!-- Dialogs -->
+    <string name="dialog_empty_bin_title">रद्दी की टोकरी खाली करें?</string>
+    <string name="dialog_empty_bin_msg">टोकरी की सभी टिप्पणियाँ स्थायी रूप से मिटा दी जाएंगी। इसे बदला नहीं जा सकता।</string>
+    <string name="dialog_empty_bin_btn">सब मिटाएं</string>
+
+    <string name="dialog_move_to_bin_title">रद्दी की टोकरी में भेजें</string>
+    <string name="dialog_move_to_bin_msg">क्या आप वाकई इस टिप्पणी को टोकरी में भेजना चाहते हैं?</string>
+
+    <string name="dialog_bin_note_title">टिप्पणी रद्दी में है</string>
+    <string name="dialog_bin_note_msg">आप हटाई गई टिप्पणी को बदल नहीं सकते। पहले उसे वापस लाएं।</string>
+    <string name="dialog_bin_note_restore">टिप्पणी वापस लाएं</string>
+    <string name="dialog_bin_note_delete">स्थायी रूप से मिटाएं</string>
+
+    <string name="dialog_locked_note_title">ताला लगी टिप्पणी 🔒</string>
+    <string name="dialog_pin_hint">गोपनीय कोड दर्ज करें</string>
+    <string name="dialog_unlock">ताला खोलें</string>
+
+    <string name="dialog_set_pin_title">गोपनीय कोड सेट करें 🔒</string>
+    <string name="dialog_set_pin_hint">उदाहरण: 1234</string>
+    <string name="dialog_lock_note_btn">ताला लगाएं</string>
+
+    <string name="dialog_category_title">श्रेणी चुनें</string>
+    <string name="dialog_add_category">नयी श्रेणी जोड़ें</string>
+    <string name="dialog_new_category_title">नयी श्रेणी</string>
+    <string name="dialog_category_name_hint">श्रेणी का नाम</string>
+
+    <string name="dialog_remove_image_title">चित्र हटाएं</string>
+    <string name="dialog_remove_image_msg">क्या आप वाकई इस चित्र को हटाना चाहते हैं?</string>
+
+    <string name="dialog_delete_notes_title">टिप्पणियाँ मिटाएं</string>
+    <string name="dialog_move_notes_title">टिप्पणियाँ भेजें</string>
+
+    <string name="dialog_restore_notes_title">टिप्पणियाँ वापस लाएं</string>
+    <string name="dialog_restore_notes_msg">चुनी हुई टिप्पणियों को मुख्य सूची में वापस लाएं?</string>
+
+    <!-- Note Types Dialog -->
+    <string name="new_note_heading">नयी टिप्पणी बनाएं</string>
+    <string name="normal_note_title">सामान्य टिप्पणी</string>
+    <string name="normal_note_subtitle">लिखें, सूची बनाएं या चित्र जोड़ें</string>
+
+    <!-- Menu Items -->
+    <string name="menu_all_notes">📝  सभी नोट्स</string>
+    <string name="menu_normal_notes">📝  साधारण नोट्स</string>
+    <string name="menu_bin">🗑️  रद्दी की टोकरी</string>
+    <string name="menu_theme">🌓  रंग-रूप बदलें (थीम)</string>
+    <string name="menu_language">🌐  भाषा चुनें</string>
+    <string name="menu_manage_categories">📁  श्रेणियों का प्रबंधन</string>
+    <string name="manage_small">⚙️ प्रबंधन</string>
+
+
+    <string name="menu_change_category">श्रेणी बदलें</string>
+    <string name="menu_make_copy">प्रतिलिपि (Copy) बनाएं</string>
+    <string name="menu_send">भेजें</string>
+    <string name="menu_share_pdf">PDF के रूप में भेजें</string>
+    <string name="menu_share_text">फ़ाइल के रूप में भेजें</string>
+    <string name="menu_export_source">सोर्स फ़ाइल के रूप में निकालें</string>
+    <string name="menu_move_to_bin">टोकरी में भेजें</string>
+
+    <!-- Empty States -->
+    <string name="empty_state_bin">टोकरी खाली है! 🗑️</string>
+    <string name="empty_state_category">%1$s श्रेणी में कुछ नहीं है! 📝</string>
+    <string name="empty_state_search">\'%1$s\' के लिए कुछ नहीं मिला 🔍</string>
+    <string name="empty_state_no_notes">अभी कोई टिप्पणी नहीं है! 📝</string>
+
+    <!-- Sharing & Export -->
+    <string name="share_via">टिप्पणी साझा करें</string>
+    <string name="share_pdf_via">PDF साझा करें</string>
+    <string name="share_text_via">फ़ाइल साझा करें</string>
+
+    <!-- Notifications -->
+    <string name="notif_reminder_title">⏰ अनुस्मारक: %1$s</string>
+    <string name="notif_reminder_msg">अपनी टिप्पणी देखने के लिए ऐप खोलें!</string>
+
+    <!-- Selection -->
+    <string name="selected_count">%1$d चुनी गईं</string>
+    <string name="deselect_all">चयन हटाएँ</string>
+    <string name="select_all">सब चुनें</string>
+
+    <!-- Shortcuts -->
+    <string name="shortcut_new_note_short">नयी नोट</string>
+    <string name="shortcut_new_note_long">एक नयी टिप्पणी लिखें</string>
+</resources>
