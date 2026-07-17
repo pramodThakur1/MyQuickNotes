@@ -136,7 +136,7 @@ public class MainActivity extends AppCompatActivity {
 	private static final String METADATA_KEY_ALIAS = "AppMetadataKey"; // For Email/Paths (Fast Lock)
 	private static final String ALGO_GCM = "AES/GCM/NoPadding";
 	private static final int TAG_LENGTH = 128;
-	private static final int IV_LENGTH = 12; 
+	private static final int IV_LENGTH = 12;
 
 	private DrawerLayout drawerLayout;
 	private TextView buttonMenu, menuBin, menuTheme, menuLanguage, menuSettings, menuManageCategories, textCategoriesHeader, textLastSync, buttonToggleView, buttonSort, buttonEmptyBin, textEmptyState, textWordCount, textUserEmail, buttonLogout, buttonClearSearch;
@@ -247,30 +247,30 @@ public class MainActivity extends AppCompatActivity {
 							try {
 								// 2. Process in background silently
 								Bitmap bitmap = MediaStore.Images.Media.getBitmap(this.getContentResolver(), uri);
-								
+
 								java.io.File imagesDir = new java.io.File(getFilesDir(), "images");
-					if (!imagesDir.exists()) imagesDir.mkdirs();
-					
-					java.io.File file = new java.io.File(imagesDir, "note_img_" + System.currentTimeMillis() + ".webp");
-					FileOutputStream fos = new FileOutputStream(file);
-					if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-						bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 75, fos); // Balanced quality
-					} else {
-						bitmap.compress(Bitmap.CompressFormat.WEBP, 75, fos);
-					}
-					fos.flush(); fos.close(); bitmap.recycle();
-					
-					// SECURE: Explicitly set private permissions (CWE-276 Fix)
-					file.setReadable(true, true);
-					file.setWritable(true, true);
-					
-					// SECURE: Store path as encrypted metadata (Finding H-003 Fix)
-					// SECURE: Use Metadata Key (Fast) for image paths
-					String encryptedPath = secureEncrypt(file.getAbsolutePath(), false);
-					
-					// 3. Swap with optimized path later
-					replacePlaceholderWithImage(originalPath, file.getAbsolutePath());
-				} catch (Exception e) { e.printStackTrace(); }
+								if (!imagesDir.exists()) imagesDir.mkdirs();
+
+								java.io.File file = new java.io.File(imagesDir, "note_img_" + System.currentTimeMillis() + ".webp");
+								FileOutputStream fos = new FileOutputStream(file);
+								if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+									bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 75, fos); // Balanced quality
+								} else {
+									bitmap.compress(Bitmap.CompressFormat.WEBP, 75, fos);
+								}
+								fos.flush(); fos.close(); bitmap.recycle();
+
+								// SECURE: Explicitly set private permissions (CWE-276 Fix)
+								file.setReadable(true, true);
+								file.setWritable(true, true);
+
+								// SECURE: Store path as encrypted metadata (Finding H-003 Fix)
+								// SECURE: Use Metadata Key (Fast) for image paths
+								String encryptedPath = secureEncrypt(file.getAbsolutePath(), false);
+
+								// 3. Swap with optimized path later
+								replacePlaceholderWithImage(originalPath, file.getAbsolutePath());
+							} catch (Exception e) { e.printStackTrace(); }
 						});
 					}
 				}
@@ -288,28 +288,28 @@ public class MainActivity extends AppCompatActivity {
 					executor.execute(() -> {
 						try {
 							java.io.File oldFile = new java.io.File(originalPath);
-							
+
 							// Scale down in background
 							android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options();
-							options.inSampleSize = 2; 
+							options.inSampleSize = 2;
 							Bitmap bitmap = android.graphics.BitmapFactory.decodeFile(originalPath, options);
-							
+
 							java.io.File imagesDir = new java.io.File(getFilesDir(), "images");
 							if (!imagesDir.exists()) imagesDir.mkdirs();
-							
+
 							java.io.File webpFile = new java.io.File(imagesDir, "note_cam_" + System.currentTimeMillis() + ".webp");
 							FileOutputStream fos = new FileOutputStream(webpFile);
 							if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 75, fos);
 							else bitmap.compress(Bitmap.CompressFormat.WEBP, 75, fos);
-							fos.flush(); fos.close(); bitmap.recycle(); 
-							
+							fos.flush(); fos.close(); bitmap.recycle();
+
 							// SECURE: Explicitly set private permissions (CWE-276 Fix)
 							webpFile.setReadable(true, true);
 							webpFile.setWritable(true, true);
-							
+
 							// Delete the heavy original (keeps storage clean)
 							oldFile.delete();
-							
+
 							// 2. Swap with optimized path
 							replacePlaceholderWithImage(originalPath, webpFile.getAbsolutePath());
 							pendingCameraPhotoPath = null;
@@ -332,9 +332,9 @@ public class MainActivity extends AppCompatActivity {
 
 	private final ActivityResultLauncher<Intent> signInLauncher = registerForActivityResult(
 			new ActivityResultContracts.StartActivityForResult(),
-			result -> { 
+			result -> {
 				if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
-					handleSignInResult(result.getData()); 
+					handleSignInResult(result.getData());
 				} else {
 					// DEBUG: Show why login launcher failed/canceled (F-Login Fix)
 					String msg = "Login Result: " + (result.getResultCode() == Activity.RESULT_CANCELED ? "CANCELED" : "CODE " + result.getResultCode());
@@ -359,7 +359,7 @@ public class MainActivity extends AppCompatActivity {
 		}
 
 		// SECURE: Block screenshots and recent-apps thumbnails globally (C3 Fix)
-		getWindow().setFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE, 
+		getWindow().setFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE,
 				android.view.WindowManager.LayoutParams.FLAG_SECURE);
 
 		// SECURE: Intent Referrer Null Bypass Fix (F-008.1 Final Stand)
@@ -417,7 +417,7 @@ public class MainActivity extends AppCompatActivity {
 		setupNoteEditorLogic();
 		handleIntentAction(getIntent());
 		setupKeyboardListener();
-		setupImageClickHandlers(); 
+		setupImageClickHandlers();
 		loadViewAndSortPreferences();
 
 		if (savedInstanceState != null) {
@@ -445,7 +445,7 @@ public class MainActivity extends AppCompatActivity {
 		if (pendingCameraPhotoPath != null) {
 			outState.putString("pending_camera_path", pendingCameraPhotoPath);
 		}
-		
+
 		// Save current typing progress as a safety draft
 		if (screenAddNote.getVisibility() == View.VISIBLE) {
 			outState.putString("draft_title", editTitle.getText().toString());
@@ -461,26 +461,26 @@ public class MainActivity extends AppCompatActivity {
 	private void showFullScreenGallery(int initialPosition) {
 		final Dialog dialog = new Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
 		dialog.setContentView(R.layout.dialog_full_image);
-		
+
 		androidx.viewpager2.widget.ViewPager2 viewPager = dialog.findViewById(R.id.galleryViewPager);
 		TextView btnClose = dialog.findViewById(R.id.btnFullImageClose);
 		TextView btnMenu = dialog.findViewById(R.id.btnFullImageMenu);
-		
+
 		NoteImageGalleryAdapter galleryAdapter = new NoteImageGalleryAdapter(currentImagePaths);
 		viewPager.setAdapter(galleryAdapter);
 		viewPager.setCurrentItem(initialPosition, false);
-		
+
 		btnClose.setOnClickListener(v -> dialog.dismiss());
-		
+
 		btnMenu.setOnClickListener(v -> {
 			int currentPos = viewPager.getCurrentItem();
 			if (currentPos < 0 || currentPos >= currentImagePaths.size()) return;
-			
+
 			String path = currentImagePaths.get(currentPos);
 			PopupMenu popup = new PopupMenu(this, btnMenu);
 			popup.getMenu().add("📤 Send Image");
 			popup.getMenu().add("🗑️ Delete Image");
-			
+
 			popup.setOnMenuItemClickListener(item -> {
 				String title = item.getTitle().toString();
 				if (title.contains("Send")) {
@@ -492,7 +492,7 @@ public class MainActivity extends AppCompatActivity {
 			});
 			popup.show();
 		});
-		
+
 		dialog.show();
 	}
 
@@ -504,10 +504,10 @@ public class MainActivity extends AppCompatActivity {
 					currentImagePaths.remove(position);
 					gAdapter.notifyItemRemoved(position);
 					imagesAdapter.notifyItemRemoved(position);
-					
+
 					// Clear from cache
 					imageCache.remove(path);
-					
+
 					if (currentImagePaths.isEmpty()) {
 						imagesRecyclerView.setVisibility(View.GONE);
 						dialog.dismiss();
@@ -553,7 +553,7 @@ public class MainActivity extends AppCompatActivity {
 						imagesAdapter.notifyItemRemoved(index);
 						imagesAdapter.notifyItemRangeChanged(index, currentImagePaths.size());
 					}
-					
+
 					// 3. CLEAR FROM CACHE (Critical Fix)
 					imageCache.remove(path);
 
@@ -567,7 +567,7 @@ public class MainActivity extends AppCompatActivity {
 
 	// SMART PRIVACY SCREEN UTILITIES (M-005 Fix)
 	private void enablePrivacyScreen() {
-		getWindow().setFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE, 
+		getWindow().setFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE,
 				android.view.WindowManager.LayoutParams.FLAG_SECURE);
 	}
 
@@ -586,7 +586,7 @@ public class MainActivity extends AppCompatActivity {
 			if (keypadHeight > screenHeight * 0.15) { // Keyboard is open
 				if (!isKeyboardOpen) {
 					isKeyboardOpen = true;
-					// Standard padding to keep cursor visible, 
+					// Standard padding to keep cursor visible,
 					// but not too much to push the Title away.
 					int padding = (int) (80 * getResources().getDisplayMetrics().density);
 					editNoteBody.setPadding(0, 0, 0, padding);
@@ -626,7 +626,7 @@ public class MainActivity extends AppCompatActivity {
 		screenAddNote = findViewById(R.id.screenAddNote);
 		layoutSplashLayer = findViewById(R.id.layoutSplashLayer);
 		ImageView imageSplashLogo = findViewById(R.id.imageSplashLogo);
-		
+
 		// Animate logo (Rotation effect)
 		if (imageSplashLogo != null) {
 			imageSplashLogo.setRotation(-180f);
@@ -639,7 +639,7 @@ public class MainActivity extends AppCompatActivity {
 				layoutSplashLayer.animate().alpha(0f).setDuration(400).withEndAction(() -> {
 					layoutSplashLayer.setVisibility(View.GONE);
 					if (!isSelectionMode && !isBinMode) buttonPlus.setVisibility(View.VISIBLE);
-					
+
 					// SECURE STARTUP UNLOCK: Load notes only after verification
 					checkInitialVaultUnlock();
 				}).start();
@@ -678,7 +678,7 @@ public class MainActivity extends AppCompatActivity {
 		btnFindPrevInNote = findViewById(R.id.btnFindPrevInNote);
 		btnFindNextInNote = findViewById(R.id.btnFindNextInNote);
 		btnCloseSearchInNote = findViewById(R.id.btnCloseSearchInNote);
-		
+
 		imagesRecyclerView = findViewById(R.id.imagesRecyclerView);
 		imagesRecyclerView.setLayoutManager(new androidx.recyclerview.widget.LinearLayoutManager(this, androidx.recyclerview.widget.LinearLayoutManager.HORIZONTAL, false));
 		imagesAdapter = new NoteImagesAdapter(currentImagePaths, new NoteImagesAdapter.OnImageActionListener() {
@@ -759,7 +759,7 @@ public class MainActivity extends AppCompatActivity {
 			toggleFab(!isFabOpen);
 		});
 		viewFabOverlay.setOnClickListener(v -> toggleFab(false));
-		
+
 		btnFabNote.setOnClickListener(v -> { toggleFab(false); createNewNote("normal"); });
 		btnFabNotebook.setOnClickListener(v -> { toggleFab(false); showAddFolderDialog(); });
 
@@ -769,7 +769,7 @@ public class MainActivity extends AppCompatActivity {
 			for (HashMap<String, String> n : allNotesList) {
 				if ("true".equals(n.get("isTrashed"))) trashedCount++;
 			}
-			
+
 			if (trashedCount == 0) {
 				Toast.makeText(this, "Recycle Bin is empty", Toast.LENGTH_SHORT).show();
 			} else {
@@ -814,7 +814,7 @@ public class MainActivity extends AppCompatActivity {
 		StringBuilder s = new StringBuilder();
 		for (int i : m) s.append((char) (i ^ key));
 		String serverClientId = s.toString();
-		
+
 		// SECURE: Request ONLY the minimal 'appdata' scope (M2 Fix)
 		GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
 				.requestEmail()
@@ -829,7 +829,7 @@ public class MainActivity extends AppCompatActivity {
 		if (account != null) {
 			initializeDriveService(account);
 			updateUserInfo(account);
-			
+
 			// If local app is empty, check for cloud data automatically
 			if (allNotesList.isEmpty()) {
 				downloadBackupFromDrive();
@@ -856,7 +856,7 @@ public class MainActivity extends AppCompatActivity {
 		com.google.android.gms.tasks.Task<GoogleSignInAccount> task = GoogleSignIn.getSignedInAccountFromIntent(data);
 		try {
 			GoogleSignInAccount account = task.getResult(com.google.android.gms.common.api.ApiException.class);
-			
+
 			// --- NEW PERMISSION GUARD START ---
 			boolean hasDrivePermission = false;
 			for (Scope scope : account.getGrantedScopes()) {
@@ -886,7 +886,7 @@ public class MainActivity extends AppCompatActivity {
 			String msg = "Login Blocked (Error " + code + ")";
 			if (code == 10) msg += ": SHA-1 or ClientID Mismatch";
 			if (code == 12500) msg += ": Configuration Issue";
-			
+
 			final String finalMsg = msg;
 			mainHandler.post(() -> Toast.makeText(MainActivity.this, finalMsg, Toast.LENGTH_LONG).show());
 		}
@@ -896,14 +896,14 @@ public class MainActivity extends AppCompatActivity {
 		SharedPreferences sp = getSharedPreferences("MyNotesData", MODE_PRIVATE);
 		String lastEmailEnc = sp.getString("last_logged_in_email_secure", "");
 		String lastEmail = null;
-		
+
 		if (!lastEmailEnc.isEmpty()) {
 			lastEmail = secureDecrypt(lastEmailEnc, false);
 		} else {
 			// Migration from legacy plaintext
 			lastEmail = sp.getString("last_logged_in_email", "");
 		}
-		
+
 		String currentEmail = account.getEmail();
 		if (currentEmail == null) return;
 
@@ -936,9 +936,9 @@ public class MainActivity extends AppCompatActivity {
 		SharedPreferences sp = getSharedPreferences("MyNotesData", MODE_PRIVATE);
 		// SECURE: Use Metadata Key (No UI Block) for login email
 		sp.edit()
-			.putString("last_logged_in_email_secure", secureEncrypt(email, false))
-			.remove("last_logged_in_email") 
-			.apply();
+				.putString("last_logged_in_email_secure", secureEncrypt(email, false))
+				.remove("last_logged_in_email")
+				.apply();
 	}
 
 	// SECURE CENTRALIZED ENCRYPTION (Finding F1 / F-013 Fix)
@@ -950,7 +950,7 @@ public class MainActivity extends AppCompatActivity {
 			byte[] iv = new byte[IV_LENGTH];
 			new java.security.SecureRandom().nextBytes(iv);
 			cipher.init(Cipher.ENCRYPT_MODE, key, new javax.crypto.spec.GCMParameterSpec(TAG_LENGTH, iv));
-			
+
 			byte[] enc = cipher.doFinal(plainText.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 			byte[] comb = new byte[iv.length + enc.length];
 			System.arraycopy(iv, 0, comb, 0, iv.length);
@@ -970,7 +970,7 @@ public class MainActivity extends AppCompatActivity {
 			byte[] enc = new byte[combined.length - IV_LENGTH];
 			System.arraycopy(combined, 0, iv, 0, IV_LENGTH);
 			System.arraycopy(combined, IV_LENGTH, enc, 0, enc.length);
-			
+
 			SecretKey key = getOrCreateKey(useMasterKey ? MASTER_KEY_ALIAS : METADATA_KEY_ALIAS, useMasterKey);
 			Cipher cipher = Cipher.getInstance(ALGO_GCM);
 			cipher.init(Cipher.DECRYPT_MODE, key, new javax.crypto.spec.GCMParameterSpec(TAG_LENGTH, iv));
@@ -987,10 +987,10 @@ public class MainActivity extends AppCompatActivity {
 		updateUserInfo(account);
 		Toast.makeText(this, "Welcome, " + account.getDisplayName() + "! Checking for cloud data...", Toast.LENGTH_LONG).show();
 		drawerLayout.openDrawer(GravityCompat.START);
-		
+
 		// First, check and download existing backup
 		downloadBackupFromDrive();
-		
+
 		// Ensure UI is in a valid state (Select Recent by default)
 		mainHandler.post(() -> tabRecent.performClick());
 	}
@@ -1025,14 +1025,14 @@ public class MainActivity extends AppCompatActivity {
 	}
 
 	private void initializeDriveService(com.google.android.gms.auth.api.signin.GoogleSignInAccount account) {
-		com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential credential = 
-				com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential.usingOAuth2(this, 
+		com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential credential =
+				com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential.usingOAuth2(this,
 						java.util.Collections.singleton(com.google.api.services.drive.DriveScopes.DRIVE_APPDATA));
 		credential.setSelectedAccount(account.getAccount());
-		
+
 		// SECURE: Use explicit NetHttpTransport to avoid legacy 'Trust-All' logic (C2 Fix)
 		com.google.api.client.http.HttpTransport transport = new com.google.api.client.http.javanet.NetHttpTransport();
-		
+
 		driveService = new com.google.api.services.drive.Drive.Builder(transport, new com.google.api.client.json.gson.GsonFactory(), credential)
 				.setApplicationName("GoNotes Pro").build();
 	}
@@ -1040,7 +1040,7 @@ public class MainActivity extends AppCompatActivity {
 	private void showCloudStatusDialog() {
 		long lastSyncTime = getSharedPreferences("MyNotesData", MODE_PRIVATE).getLong("last_sync", 0);
 		String lastSyncStr = (lastSyncTime == 0) ? "Never" : new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date(lastSyncTime));
-		
+
 		String userEmail = "Connected";
 		GoogleSignInAccount account = GoogleSignIn.getLastSignedInAccount(this);
 		if (account != null && account.getEmail() != null) userEmail = account.getEmail();
@@ -1056,7 +1056,7 @@ public class MainActivity extends AppCompatActivity {
 
 	private void uploadBackupToDrive() {
 		if (driveService == null || executor.isShutdown()) return;
-		
+
 		final com.google.android.gms.auth.api.signin.GoogleSignInAccount account = com.google.android.gms.auth.api.signin.GoogleSignIn.getLastSignedInAccount(this);
 		if (account == null || account.getId() == null) {
 			Toast.makeText(this, "Account error, please login again", Toast.LENGTH_SHORT).show();
@@ -1067,12 +1067,12 @@ public class MainActivity extends AppCompatActivity {
 			try {
 				java.io.File exportsDir = new java.io.File(getCacheDir(), "exports");
 				if (!exportsDir.exists()) exportsDir.mkdirs();
-				
+
 				java.io.File tempFile = new java.io.File(exportsDir, "drive_upload.qnb");
 				// SECURE: Use Hardware-Bound key for cloud backup (F-Backup Fix)
 				// We no longer use the predictable Google Account ID.
 				performExportSyncWithKey(Uri.fromFile(tempFile), getBackupKey());
-				
+
 				File fileMetadata = new File().setName("GoNotesPro_Backup.qnb").setParents(java.util.Collections.singletonList("appDataFolder"));
 				FileContent mediaContent = new FileContent("application/octet-stream", tempFile);
 				FileList result = driveService.files().list().setSpaces("appDataFolder").execute();
@@ -1080,10 +1080,10 @@ public class MainActivity extends AppCompatActivity {
 				if (result.getFiles() != null) {
 					for (File f : result.getFiles()) { if ("GoNotesPro_Backup.qnb".equals(f.getName())) { existingId = f.getId(); break; } }
 				}
-				
+
 				if (existingId != null) driveService.files().update(existingId, null, mediaContent).execute();
 				else driveService.files().create(fileMetadata, mediaContent).execute();
-				
+
 				tempFile.delete();
 				mainHandler.post(() -> {
 					long time = System.currentTimeMillis();
@@ -1091,7 +1091,7 @@ public class MainActivity extends AppCompatActivity {
 					updateLastSyncText(time);
 					Toast.makeText(this, "Manual backup successful!", Toast.LENGTH_SHORT).show();
 				});
-			} catch (Exception e) { 
+			} catch (Exception e) {
 				e.printStackTrace();
 				mainHandler.post(() -> Toast.makeText(this, "Manual backup failed: " + e.getMessage(), Toast.LENGTH_SHORT).show());
 			}
@@ -1100,7 +1100,7 @@ public class MainActivity extends AppCompatActivity {
 
 	private void downloadBackupFromDrive() {
 		if (driveService == null || executor.isShutdown()) return;
-		
+
 		final com.google.android.gms.auth.api.signin.GoogleSignInAccount account = com.google.android.gms.auth.api.signin.GoogleSignIn.getLastSignedInAccount(this);
 		if (account == null || account.getId() == null) return;
 
@@ -1112,13 +1112,13 @@ public class MainActivity extends AppCompatActivity {
 				if (result.getFiles() != null) {
 					for (File f : result.getFiles()) { if ("GoNotesPro_Backup.qnb".equals(f.getName())) { fileId = f.getId(); break; } }
 				}
-				
+
 				if (fileId != null) {
 					mainHandler.post(() -> Toast.makeText(this, "Backup found! Downloading...", Toast.LENGTH_SHORT).show());
 					java.io.File tempFile = new java.io.File(getCacheDir(), "drive_download.qnb");
 					OutputStream os = new FileOutputStream(tempFile);
 					driveService.files().get(fileId).executeMediaAndDownloadTo(os);
-					os.close(); 
+					os.close();
 					// SECURE: Explicitly set private permissions (CWE-276 Fix)
 					tempFile.setReadable(true, true);
 					tempFile.setWritable(true, true);					// SECURE: Decrypt using Hardware-Bound key (F-Backup Fix)
@@ -1131,7 +1131,7 @@ public class MainActivity extends AppCompatActivity {
 				} else {
 					mainHandler.post(() -> Toast.makeText(this, "No existing backup found on cloud.", Toast.LENGTH_LONG).show());
 				}
-			} catch (Exception e) { 
+			} catch (Exception e) {
 				e.printStackTrace();
 				mainHandler.post(() -> Toast.makeText(this, "Cloud check failed: " + e.getMessage(), Toast.LENGTH_LONG).show());
 			}
@@ -1160,13 +1160,10 @@ public class MainActivity extends AppCompatActivity {
 					return entry.getSecretKey(); // Key sahi hai
 				}
 			} catch (android.security.keystore.UserNotAuthenticatedException e) {
-				// PURANI KEY: Security patch se pehle bani thi, har operation pe fingerprint maangti thi
+				// FIX: Sirf purani key delete karo — notes SharedPreferences se mat hatao.
+				// Biometric/fingerprint change hone pe notes wipe nahi honge.
 				keyStore.deleteEntry(alias);
-				getSharedPreferences("MyNotesData", MODE_PRIVATE).edit()
-					.remove("notes_json_secure")
-					.remove("notes_json")
-					.apply();
-				android.util.Log.w("NoteStorage", "Auth-required key deleted, old data cleared: " + alias);
+				android.util.Log.w("NoteStorage", "Auth-required key deleted, notes preserved, will recreate key: " + alias);
 			} catch (Exception invalidEx) {
 				keyStore.deleteEntry(alias);
 				android.util.Log.w("NoteStorage", "Invalid key removed, will recreate: " + alias + " (" + invalidEx.getClass().getSimpleName() + ")");
@@ -1206,18 +1203,18 @@ public class MainActivity extends AppCompatActivity {
 		new java.security.SecureRandom().nextBytes(signature);
 		os.write(signature);
 		os.write(3); // Version 3
-		
+
 		Cipher cipher = Cipher.getInstance(ALGO_GCM);
 		byte[] nonce = new byte[IV_LENGTH];
 		new java.security.SecureRandom().nextBytes(nonce);
 		cipher.init(Cipher.ENCRYPT_MODE, key, new javax.crypto.spec.GCMParameterSpec(TAG_LENGTH, nonce));
-		
+
 		os.write(nonce);
 		CipherOutputStream cos = new CipherOutputStream(os, cipher);
 		ZipOutputStream zos = new ZipOutputStream(cos);
 		SharedPreferences sp = getSharedPreferences("MyNotesData", MODE_PRIVATE);
 		JSONObject obj = new JSONObject();
-		
+
 		// Use secure notes for export
 		String secureNotes = sp.getString("notes_json_secure", "[]");
 		JSONArray notesArray;
@@ -1234,7 +1231,7 @@ public class MainActivity extends AppCompatActivity {
 			cS.init(Cipher.DECRYPT_MODE, getOrCreateKey(MASTER_KEY_ALIAS, true), new javax.crypto.spec.GCMParameterSpec(TAG_LENGTH, ivS));
 			notesArray = new JSONArray(new String(cS.doFinal(enc), java.nio.charset.StandardCharsets.UTF_8));
 		}
-		
+
 		// SECURE CATEGORIES EXPORT (Finding 015 Fix)
 		// Fetch categories from encrypted storage instead of deleted plaintext key
 		String secureCats = sp.getString("categories_list_secure", "[]");
@@ -1251,13 +1248,13 @@ public class MainActivity extends AppCompatActivity {
 			cC.init(Cipher.DECRYPT_MODE, getOrCreateKey(MASTER_KEY_ALIAS, true), new javax.crypto.spec.GCMParameterSpec(TAG_LENGTH, ivC));
 			catsArray = new JSONArray(new String(cC.doFinal(encC), java.nio.charset.StandardCharsets.UTF_8));
 		}
-		
+
 		obj.put("notes", notesArray);
 		obj.put("categories", catsArray);
 		obj.put("categories_modified_at", sp.getLong("categories_modified_at", 0));
-		
+
 		zos.putNextEntry(new java.util.zip.ZipEntry("data.json")); zos.write(obj.toString().getBytes()); zos.closeEntry();
-		
+
 		java.io.File imagesDir = new java.io.File(getFilesDir(), "images");
 		java.io.File[] files = imagesDir.listFiles();
 		if (files != null) {
@@ -1300,18 +1297,18 @@ public class MainActivity extends AppCompatActivity {
 			try {
 				InputStream is = getContentResolver().openInputStream(uri);
 				if (is == null) throw new Exception("Failed to open input stream");
-				
+
 				// 1. Skip Random Signature (V3 Format)
 				is.skip(16);
-				
+
 				// 2. Read Version and Nonce
-				int version = is.read(); 
+				int version = is.read();
 				byte[] nonce = new byte[IV_LENGTH];
 				is.read(nonce);
 
 				Cipher cipher = Cipher.getInstance(ALGO_GCM);
 				cipher.init(Cipher.DECRYPT_MODE, key, new javax.crypto.spec.GCMParameterSpec(TAG_LENGTH, nonce));
-				
+
 				javax.crypto.CipherInputStream cis = new javax.crypto.CipherInputStream(is, cipher);
 				java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(cis);
 				java.util.zip.ZipEntry entry;
@@ -1327,7 +1324,7 @@ public class MainActivity extends AppCompatActivity {
 						java.io.File imagesDir = new java.io.File(getFilesDir(), "images");
 						if (!imagesDir.exists()) imagesDir.mkdirs();
 						java.io.File destFile = new java.io.File(imagesDir, fileName);
-						
+
 						// ZIP SLIP PROTECTION
 						if (!destFile.getCanonicalPath().startsWith(imagesDir.getCanonicalPath())) throw new SecurityException("Malicious backup file!");
 
@@ -1341,7 +1338,7 @@ public class MainActivity extends AppCompatActivity {
 					}
 					zis.closeEntry();
 				}
-				
+
 				final JSONObject finalObj = importedData;
 				zis.close(); cis.close(); is.close();
 				mainHandler.post(() -> {
@@ -1349,19 +1346,19 @@ public class MainActivity extends AppCompatActivity {
 						Toast.makeText(this, "Invalid backup data", Toast.LENGTH_SHORT).show();
 						return;
 					}
-					
+
 					try {
 						JSONArray cloudNotesArray = finalObj.optJSONArray("notes");
 						JSONArray cloudCatsArray = finalObj.optJSONArray("categories");
 						long cloudCatsTime = finalObj.optLong("categories_modified_at", 0);
-						
+
 						if (cloudNotesArray == null) cloudNotesArray = new JSONArray();
 						if (cloudCatsArray == null) cloudCatsArray = new JSONArray();
 
 						// --- SMART MERGE LOGIC ---
 						SharedPreferences sp = getSharedPreferences("MyNotesData", MODE_PRIVATE);
 						java.util.Set<String> localDeadList = sp.getStringSet("deleted_note_ids", new java.util.HashSet<>());
-						
+
 						// 1. Merge Categories
 						long localCatsTime = sp.getLong("categories_modified_at", 0);
 						if (cloudCatsTime > localCatsTime || categoriesList.isEmpty()) {
@@ -1390,7 +1387,7 @@ public class MainActivity extends AppCompatActivity {
 								if (cTime > lTime) { localNotesMap.put(id, cMap); localChanged = true; }
 							} else { localNotesMap.put(id, cMap); localChanged = true; }
 						}
-						
+
 						if (localChanged) {
 							allNotesList.clear();
 							allNotesList.addAll(localNotesMap.values());
@@ -1402,7 +1399,7 @@ public class MainActivity extends AppCompatActivity {
 							}
 							saveCategories();
 						}
-						
+
 						loadNotesFromStorage();
 						setupCategoriesInDrawer();
 						Toast.makeText(this, "Restore successful!", Toast.LENGTH_SHORT).show();
@@ -1423,7 +1420,7 @@ public class MainActivity extends AppCompatActivity {
 		KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
 		ks.load(null);
 		String BACKUP_SECRET_ALIAS = "BackupMasterSecret";
-		
+
 		if (!ks.containsAlias(BACKUP_SECRET_ALIAS)) {
 			// Generate a high-entropy, hardware-bound random secret
 			KeyGenerator kg = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
@@ -1438,7 +1435,7 @@ public class MainActivity extends AppCompatActivity {
 			}
 			kg.generateKey();
 		}
-		
+
 		// Use the hardware-bound key itself for maximum security
 		return ((KeyStore.SecretKeyEntry) ks.getEntry(BACKUP_SECRET_ALIAS, null)).getSecretKey();
 	}
@@ -1632,7 +1629,7 @@ public class MainActivity extends AppCompatActivity {
 			}
 		});
 		View.OnTouchListener tl = (v, ev) -> { swipeDetector.onTouchEvent(ev); return false; };
-		listViewNotes.setOnTouchListener(tl); 
+		listViewNotes.setOnTouchListener(tl);
 		gridViewNotes.setOnTouchListener(tl);
 		screenList.setOnTouchListener(tl); // Enable swipe on empty areas too
 	}
@@ -1653,11 +1650,11 @@ public class MainActivity extends AppCompatActivity {
 			return;
 		}
 		startupUnlockAttempted = true;
-		
+
 		// Detect if we have biometrics enrolled
 		BiometricManager bm = BiometricManager.from(this);
 		int status = bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL);
-		
+
 		if (status == BiometricManager.BIOMETRIC_SUCCESS) {
 			// MANDATORY STARTUP UNLOCK (Ensures key is released for the session)
 			showStartupBiometricPrompt();
@@ -1669,10 +1666,10 @@ public class MainActivity extends AppCompatActivity {
 
 	private void showStartupBiometricPrompt() {
 		try {
-			// SECURE UNLOCK: We don't pass CryptoObject here to properly activate the 
+			// SECURE UNLOCK: We don't pass CryptoObject here to properly activate the
 			// 30-minute hardware key release window (F-Auth Fix).
 			new BiometricPrompt(this, ContextCompat.getMainExecutor(this), new BiometricPrompt.AuthenticationCallback() {
-				@Override public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult r) { 
+				@Override public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult r) {
 					isVaultUnlocked = true; // Release the guard
 					loadNotesFromStorage(); // Access granted, load the notes!
 				}
@@ -1681,7 +1678,7 @@ public class MainActivity extends AppCompatActivity {
 					// If canceled or failed, show empty state to protect data
 					isVaultUnlocked = false;
 					Toast.makeText(MainActivity.this, "Vault locked: " + errString, Toast.LENGTH_SHORT).show();
-					filterNotes(""); 
+					filterNotes("");
 				}
 			}).authenticate(new BiometricPrompt.PromptInfo.Builder()
 					.setTitle("Unlock Secure Vault")
@@ -1700,7 +1697,7 @@ public class MainActivity extends AppCompatActivity {
 			showPinDialog(n);
 			return;
 		}
-		
+
 		BiometricManager bm = BiometricManager.from(this);
 		if (bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL) == BiometricManager.BIOMETRIC_SUCCESS) showBiometricPrompt(n);
 		else showPinDialog(n);
@@ -1713,11 +1710,11 @@ public class MainActivity extends AppCompatActivity {
 			// We use ENCRYPT_MODE just to "prime" the cipher for auth-binding check
 			// In a more complex app, we'd use this cipher to decrypt the specific note.
 			cipher.init(Cipher.ENCRYPT_MODE, key);
-			
+
 			BiometricPrompt.CryptoObject cryptoObject = new BiometricPrompt.CryptoObject(cipher);
 
 			new BiometricPrompt(this, ContextCompat.getMainExecutor(this), new BiometricPrompt.AuthenticationCallback() {
-				@Override public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult r) { 
+				@Override public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult r) {
 					// SECURE: Only proceed if the hardware-backed CryptoObject is returned
 					if (r.getCryptoObject() != null) {
 						openNoteContent(n);
@@ -1744,7 +1741,7 @@ public class MainActivity extends AppCompatActivity {
 		final EditText input = new EditText(this);
 		input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
 		input.setHint("Enter 4-digit PIN");
-		
+
 		// Add some padding to the EditText for better UI
 		FrameLayout container = new FrameLayout(this);
 		FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1780,16 +1777,16 @@ public class MainActivity extends AppCompatActivity {
 		currentEditingNoteId = n.get("id");
 		editTitle.setText(n.get("title"));
 		currentNoteCategory = n.get("category") != null ? n.get("category") : "General";
-		
+
 		isUndoRedoActive = true;
 		String fullBody = n.get("fullBody") != null ? n.get("fullBody") : "";
 		editNoteBody.setText(fullBody);
-		
+
 		undoList.clear();
 		redoList.clear();
 		undoList.add(editNoteBody.getText().toString());
 		isUndoRedoActive = false;
-		
+
 		currentImagePaths.clear();
 		try {
 			String imagesJson = n.get("images");
@@ -1800,19 +1797,19 @@ public class MainActivity extends AppCompatActivity {
 		} catch (Exception e) {}
 		imagesAdapter.notifyDataSetChanged();
 		imagesRecyclerView.setVisibility(currentImagePaths.isEmpty() ? View.GONE : View.VISIBLE);
-		
+
 		// Setup editor UI
 		editNoteBody.setTypeface(Typeface.DEFAULT);
 		// Normal notes should wrap text
 		editNoteBody.setHorizontallyScrolling(false);
 		// Enable standard text features for normal notes
 		editNoteBody.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-		
+
 		isCurrentNotePinned = "true".equals(n.get("isPinned"));
 		isCurrentNoteLocked = "true".equals(n.get("isLocked"));
 		currentNotePin = n.get("pin") != null ? n.get("pin") : "";
 		updateEditorToolbarIcons();
-		
+
 		screenList.setVisibility(View.GONE);
 		screenAddNote.setVisibility(View.VISIBLE);
 		buttonPlus.setVisibility(View.GONE);
@@ -1820,7 +1817,7 @@ public class MainActivity extends AppCompatActivity {
 
 	private void updateEditorToolbarIcons() {
 		buttonPin.setTextColor(isCurrentNotePinned ? Color.parseColor("#FFD700") : ContextCompat.getColor(this, R.color.primaryTextColor));
-		
+
 		// Ensure actions are closed when opening a note
 		if (layoutNoteActions != null) layoutNoteActions.setVisibility(View.GONE);
 	}
@@ -1840,7 +1837,7 @@ public class MainActivity extends AppCompatActivity {
 		}
 	}
 
-	private void closeNoteScreen() { 
+	private void closeNoteScreen() {
 		// HIDE KEYBOARD
 		android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
 		android.view.View focusView = getCurrentFocus();
@@ -1856,12 +1853,12 @@ public class MainActivity extends AppCompatActivity {
 			layoutSearchInNote.setVisibility(View.GONE);
 			clearSearchHighlights();
 		}
-		saveCurrentNote(); 
+		saveCurrentNote();
 		disablePrivacyScreen(); // SECURE: Re-enable screenshots for normal list view (C3 Fix)
-		screenAddNote.setVisibility(View.GONE); 
-		screenList.setVisibility(View.VISIBLE); 
-		if (!isBinMode && !isSelectionMode) buttonPlus.setVisibility(View.VISIBLE); 
-		filterNotes(""); 
+		screenAddNote.setVisibility(View.GONE);
+		screenList.setVisibility(View.VISIBLE);
+		if (!isBinMode && !isSelectionMode) buttonPlus.setVisibility(View.VISIBLE);
+		filterNotes("");
 	}
 
 	private void saveCurrentNote() {
@@ -1871,9 +1868,9 @@ public class MainActivity extends AppCompatActivity {
 
 		String t = editTitle.getText().toString().trim();
 		String b = editNoteBody.getText().toString().trim();
-		
+
 		if (t.isEmpty() && b.isEmpty() && currentEditingNoteId == null && currentImagePaths.isEmpty()) return;
-		
+
 		HashMap<String, String> n = null;
 		if (currentEditingNoteId == null) {
 			n = new HashMap<>();
@@ -1922,7 +1919,7 @@ public class MainActivity extends AppCompatActivity {
 
 		// CRITICAL: Force synchronous save to disk
 		saveNotesToStorage();
-		
+
 		if (driveService != null) {
 			uploadBackupToDriveBackground(true);
 		}
@@ -1931,7 +1928,7 @@ public class MainActivity extends AppCompatActivity {
 	private void uploadBackupToDriveBackground(boolean immediate) {
 		// SECURITY: Disable cloud sync on rooted devices
 		if (isDeviceRooted()) return;
-		
+
 		if (executor.isShutdown()) return; // Prevent crash if task is sent while shutting down
 		mainHandler.removeCallbacks(syncRunnable);
 		if (immediate) {
@@ -1945,8 +1942,8 @@ public class MainActivity extends AppCompatActivity {
 		if (driveService == null || executor.isShutdown()) {
 			return;
 		}
-		
-		// SAFETY CHECK: Don't auto-upload if local notes are 0 
+
+		// SAFETY CHECK: Don't auto-upload if local notes are 0
 		if (allNotesList.isEmpty()) {
 			return;
 		}
@@ -1957,16 +1954,16 @@ public class MainActivity extends AppCompatActivity {
 				performExportSync(Uri.fromFile(tempFile));
 				File fileMetadata = new File().setName("GoNotesPro_Backup.qnb").setParents(java.util.Collections.singletonList("appDataFolder"));
 				FileContent mediaContent = new FileContent("application/octet-stream", tempFile);
-				
+
 				FileList result = driveService.files().list().setSpaces("appDataFolder").execute();
 				String existingId = null;
 				if (result.getFiles() != null) {
 					for (File f : result.getFiles()) { if ("GoNotesPro_Backup.qnb".equals(f.getName())) { existingId = f.getId(); break; } }
 				}
-				
+
 				if (existingId != null) driveService.files().update(existingId, null, mediaContent).execute();
 				else driveService.files().create(fileMetadata, mediaContent).execute();
-				
+
 				tempFile.delete();
 				mainHandler.post(() -> {
 					long time = System.currentTimeMillis();
@@ -1976,7 +1973,7 @@ public class MainActivity extends AppCompatActivity {
 							.apply();
 					updateLastSyncText(time);
 				});
-			} catch (Exception e) { 
+			} catch (Exception e) {
 				e.printStackTrace();
 				mainHandler.post(() -> {
 					textLastSync.setText("Last sync: Connection issue");
@@ -2010,7 +2007,7 @@ public class MainActivity extends AppCompatActivity {
 							}
 						}
 					}
-					
+
 					if (!parentIsAlsoTrashed) {
 						String title = n.get("title") != null ? n.get("title").toLowerCase() : "";
 						String body = n.get("fullBody") != null ? n.get("fullBody").toLowerCase() : "";
@@ -2035,11 +2032,11 @@ public class MainActivity extends AppCompatActivity {
 				if ("true".equals(n.get("isTrashed"))) continue;
 				String parent = n.get("parentId");
 				if (parent == null) parent = "root";
-				
+
 				if (currentParentId.equals(parent)) {
 					// If we are at Notebook Root, show ONLY folders/books
 					if (currentParentId.equals("root") && !"true".equals(n.get("isFolder"))) continue;
-					
+
 					String title = n.get("title") != null ? n.get("title").toLowerCase() : "";
 					if (title.contains(query)) displayedNotesList.add(n);
 				}
@@ -2051,7 +2048,7 @@ public class MainActivity extends AppCompatActivity {
 
 				String parent = n.get("parentId");
 				if (parent == null) parent = "root";
-				
+
 				// Category Filter: If a category is selected (other than All), filter by it
 				if (!selectedCategoryFilter.equals("All")) {
 					String noteCat = n.get("category");
@@ -2071,7 +2068,7 @@ public class MainActivity extends AppCompatActivity {
 		}
 		adapter.notifyDataSetChanged();
 		if (gridAdapter != null) gridAdapter.notifyDataSetChanged();
-		
+
 		updateFilterTabsUI(); // Ensure tabs update based on content types
 
 		if (isBinMode && displayedNotesList.isEmpty()) {
@@ -2091,7 +2088,7 @@ public class MainActivity extends AppCompatActivity {
 		SharedPreferences sp = getSharedPreferences("MyNotesData", MODE_PRIVATE);
 		SharedPreferences.Editor editor = sp.edit();
 		boolean changed = false;
-		
+
 		// Preserve notes data stored in the fallback plaintext key. Deleting it here can make
 		// notes disappear after app restart when secure storage is unavailable or auth fails.
 		if (sp.contains("last_logged_in_email")) {
@@ -2160,7 +2157,7 @@ public class MainActivity extends AppCompatActivity {
 					String s1 = new String(new char[]{'f','r','i','d','a'});
 					String s2 = new String(new char[]{'x','p','o','s','e','d'});
 					String s3 = new String(new char[]{'g','u','m','-','j','s','-','l','o','o','p'});
-					
+
 					boolean viol = false;
 					while ((line = br.readLine()) != null) {
 						String l = line.toLowerCase();
@@ -2201,15 +2198,15 @@ public class MainActivity extends AppCompatActivity {
 				com.google.android.material.dialog.MaterialAlertDialogBuilder builder = new com.google.android.material.dialog.MaterialAlertDialogBuilder(MainActivity.this)
 						.setTitle("Security Warning 🛡️")
 						.setMessage(reason + (isDebugAPK ? "\n\n(Testing Mode: Proceed with caution)" : "\n\nFor your data safety, GoNotes Pro will now exit."));
-				
+
 				if (isDebugAPK) {
 					// In Debug Mode, allow the developer to continue testing
 					builder.setCancelable(true)
-						   .setPositiveButton("I UNDERSTAND", null);
+							.setPositiveButton("I UNDERSTAND", null);
 				} else {
 					// In Release Mode, enforce a hard stop for VAPT compliance
 					builder.setCancelable(false)
-						   .setPositiveButton("EXIT APP", (d, w) -> {
+							.setPositiveButton("EXIT APP", (d, w) -> {
 								finishAffinity();
 								android.os.Process.killProcess(android.os.Process.myPid());
 								System.exit(0);
@@ -2224,17 +2221,17 @@ public class MainActivity extends AppCompatActivity {
 		try {
 			// We build the command dynamically to avoid static string grep
 			String c = new String(new char[]{'g','e','t','p','r','o','p'});
-			
+
 			// Check ro.secure (Must be 1)
 			String p1 = new String(new char[]{'r','o','.','s','e','c','u','r','e'});
 			String v1 = getSystemProp(c, p1);
 			if ("0".equals(v1)) return true; // ADB Root or insecure kernel detected
-			
+
 			// Check ro.debuggable (Must be 0)
 			String p2 = new String(new char[]{'r','o','.','d','e','b','u','g','g','a','b','l','e'});
 			String v2 = getSystemProp(c, p2);
 			if ("1".equals(v2)) return true; // Debuggable firmware
-			
+
 			return false;
 		} catch (Exception e) { return false; }
 	}
@@ -2304,12 +2301,13 @@ public class MainActivity extends AppCompatActivity {
 			if (secureData != null) {
 				applyStorageModeToAllNotes("encrypted");
 				editor.putString("notes_json_secure", secureData)
-					.remove("notes_json")
-					.commit();
+						.remove("notes_json")
+						.commit();
 				android.util.Log.d("NoteStorage", "Saved encrypted payload to notes_json_secure");
 			} else {
-				// Silent log - encryption fail hua (getOrCreateKey fix ke baad nahi hona chahiye)
-				android.util.Log.e("NoteStorage", "Encryption failed; note payload was not saved securely.");
+				// FIX: Encryption fail hone par plaintext fallback mein save karo taaki notes lost na hon
+				android.util.Log.e("NoteStorage", "Encryption failed; saving as plaintext fallback to prevent data loss.");
+				editor.putString("notes_json", plainJson).commit();
 			}
 		} catch (Exception e) {
 			android.util.Log.e("NoteStorage", "saveNotesToStorage failed: " + e.getMessage(), e);
@@ -2328,9 +2326,9 @@ public class MainActivity extends AppCompatActivity {
 				String encrypted = secureEncrypt(plainJson, true);
 				if (encrypted != null) {
 					sp.edit()
-						.putString("notes_json_secure", encrypted)
-						.remove("notes_json")
-						.apply();
+							.putString("notes_json_secure", encrypted)
+							.remove("notes_json")
+							.apply();
 					android.util.Log.d("NoteStorage", "Migration complete: plain notes encrypted and notes_json removed");
 				} else {
 					android.util.Log.e("NoteStorage", "Migration failed: encryption returned null");
@@ -2395,7 +2393,7 @@ public class MainActivity extends AppCompatActivity {
 
 	private void setupCategoriesInDrawer() {
 		layoutCategoriesInDrawer.removeAllViews();
-		
+
 		// Update Bin Menu Text with Count
 		int trashedCount = 0;
 		for (HashMap<String, String> n : allNotesList) {
@@ -2405,10 +2403,10 @@ public class MainActivity extends AppCompatActivity {
 
 		for (String c : categoriesList) {
 			TextView tv = new TextView(this); tv.setText(c); tv.setPadding(40, 20, 40, 20);
-			tv.setOnClickListener(v -> { 
-				selectedCategoryFilter = c; 
+			tv.setOnClickListener(v -> {
+				selectedCategoryFilter = c;
 				isBinMode = false; isNormalFilterMode = true; isNotebookMode = false; isRecentMode = false;
-				drawerLayout.closeDrawer(GravityCompat.START); 
+				drawerLayout.closeDrawer(GravityCompat.START);
 				updateFilterTabsUI();
 				sortNotesBy(getSharedPreferences("MyNotesData", MODE_PRIVATE).getString("sort_criteria", "Newest First"));
 			});
@@ -2419,20 +2417,20 @@ public class MainActivity extends AppCompatActivity {
 	private void toggleTheme() {
 		int currentMode = AppCompatDelegate.getDefaultNightMode();
 		int newMode = (currentMode == AppCompatDelegate.MODE_NIGHT_YES) ? AppCompatDelegate.MODE_NIGHT_NO : AppCompatDelegate.MODE_NIGHT_YES;
-		
+
 		// Save the new theme preference
 		getSharedPreferences("MyNotesData", MODE_PRIVATE).edit().putInt("theme_mode", newMode).apply();
-		
+
 		// Apply the theme
 		AppCompatDelegate.setDefaultNightMode(newMode);
-		
+
 		// Recreate to ensure all ?attr colors are freshly applied
 		recreate();
 	}
 	private void showLanguageSelector() {
 		String[] languages = {"English", "Hindi"};
 		String[] langCodes = {"en", "hi"};
-		
+
 		new AlertDialog.Builder(this)
 				.setTitle("Choose App Language")
 				.setItems(languages, (dialog, which) -> {
@@ -2442,18 +2440,18 @@ public class MainActivity extends AppCompatActivity {
 				})
 				.show();
 	}
-	private void showBackupRestoreDialog() { 
+	private void showBackupRestoreDialog() {
 		if (driveService == null) requestSignIn();
 		else showCloudStatusDialog();
 	}
 	private void showSettingsDialog() {
 		final Dialog dialog = new Dialog(this);
 		dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-		
+
 		LinearLayout container = new LinearLayout(this);
 		container.setOrientation(LinearLayout.VERTICAL);
 		container.setPadding(40, 60, 40, 60);
-		
+
 		int bgColor = ContextCompat.getColor(this, R.color.drawerBackgroundColor);
 		GradientDrawable shape = new GradientDrawable();
 		shape.setCornerRadius(50);
@@ -2498,11 +2496,11 @@ public class MainActivity extends AppCompatActivity {
 	private void showAboutDialog() {
 		final Dialog dialog = new Dialog(this);
 		dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-		
+
 		LinearLayout container = new LinearLayout(this);
 		container.setOrientation(LinearLayout.VERTICAL);
 		container.setPadding(60, 70, 60, 70);
-		
+
 		int bgColor = ContextCompat.getColor(this, R.color.drawerBackgroundColor);
 		GradientDrawable shape = new GradientDrawable();
 		shape.setCornerRadius(50);
@@ -2577,7 +2575,7 @@ public class MainActivity extends AppCompatActivity {
 		final EditText input = new EditText(this);
 		input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
 		input.setHint("Enter any locked note's PIN");
-		
+
 		new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
 				.setTitle("Confirm Full Wipe")
 				.setMessage("Please enter a PIN from any of your locked notes to authorize this operation.")
@@ -2610,7 +2608,7 @@ public class MainActivity extends AppCompatActivity {
 				// 1. CLEAR LOCAL DATA IMMEDIATELY (Commit synchronously)
 				allNotesList.clear();
 				getSharedPreferences("MyNotesData", MODE_PRIVATE).edit().clear().commit();
-				
+
 				// 2. CLEAR ALL INTERNAL FILES (Images/Backups)
 				java.io.File filesDir = getFilesDir();
 				if (filesDir != null && filesDir.listFiles() != null) {
@@ -2618,7 +2616,7 @@ public class MainActivity extends AppCompatActivity {
 						f.delete();
 					}
 				}
-				
+
 				// 3. CLEAR CACHE
 				java.io.File cacheDir = getCacheDir();
 				if (cacheDir != null && cacheDir.listFiles() != null) {
@@ -2644,7 +2642,7 @@ public class MainActivity extends AppCompatActivity {
 				mainHandler.post(() -> {
 					if (pd.isShowing()) pd.dismiss();
 					Toast.makeText(this, "Total Wipe Complete! Restarting...", Toast.LENGTH_LONG).show();
-					
+
 					// 5. FORCE RESTART APP to clear memory state
 					mainHandler.postDelayed(() -> {
 						Intent intent = getBaseContext().getPackageManager().getLaunchIntentForPackage(getBaseContext().getPackageName());
@@ -2666,19 +2664,19 @@ public class MainActivity extends AppCompatActivity {
 
 	private void performStorageCleanUp() {
 		if (executor.isShutdown()) return;
-		
+
 		// Visual feedback: Start scanning message
 		Toast.makeText(MainActivity.this, "Scanning storage...", Toast.LENGTH_SHORT).show();
 
 		executor.execute(() -> {
 			long deletedSize = 0;
 			int deletedFilesCount = 0;
-			
+
 			try {
 				// 1. FORCE RELOAD ALL NOTES from storage to ensure we have the full list
 				ArrayList<HashMap<String, String>> latestNotes = new ArrayList<>();
 				SharedPreferences sp = getSharedPreferences("MyNotesData", MODE_PRIVATE);
-				
+
 				// Try secure data first
 				String secureData = sp.getString("notes_json_secure", null);
 				String json = null;
@@ -2723,14 +2721,14 @@ public class MainActivity extends AppCompatActivity {
 
 				// 3. Purge Orphaned Files from BOTH root and subfolders
 				java.io.File[] scanDirs = { getFilesDir(), new java.io.File(getFilesDir(), "images"), getCacheDir(), new java.io.File(getCacheDir(), "exports") };
-				
+
 				for (java.io.File dir : scanDirs) {
 					if (dir != null && dir.exists() && dir.listFiles() != null) {
 						for (java.io.File f : dir.listFiles()) {
 							if (f.isDirectory()) continue;
 							String name = f.getName();
 							boolean isTarget = name.endsWith(".webp") || name.endsWith(".jpg") || name.startsWith("camera_temp_") || name.startsWith("note_img_") || name.startsWith("note_cam_") || name.endsWith(".qnb") || name.endsWith(".pdf");
-							
+
 							if (isTarget && !activeImageNames.contains(name)) {
 								if (System.currentTimeMillis() - f.lastModified() < 10000) continue;
 								deletedSize += f.length();
@@ -2754,8 +2752,8 @@ public class MainActivity extends AppCompatActivity {
 		});
 	}
 
-	private void enterBinMode() { 
-		isBinMode = true; 
+	private void enterBinMode() {
+		isBinMode = true;
 		isNotebookMode = false;
 		isNormalFilterMode = false;
 		isRecentMode = false;
@@ -2764,7 +2762,7 @@ public class MainActivity extends AppCompatActivity {
 		buttonEmptyBin.setVisibility(View.VISIBLE);
 		buttonSort.setVisibility(View.GONE);
 		buttonToggleView.setVisibility(View.GONE);
-		filterNotes(""); 
+		filterNotes("");
 		updateFilterTabsUI();
 	}
 
@@ -2802,11 +2800,11 @@ public class MainActivity extends AppCompatActivity {
 	private void updateModeHeader() {
 		if (layoutNotebookBreadcrumb == null) return;
 		layoutNotebookBreadcrumb.removeAllViews();
-		
+
 		TextView tv = new TextView(this);
 		if (isBinMode) tv.setText("🗑️ Recycle Bin");
 		else tv.setText("📁 Category: " + selectedCategoryFilter);
-		
+
 		tv.setTextSize(18);
 		tv.setTypeface(null, Typeface.BOLD);
 		tv.setTextColor(ContextCompat.getColor(this, R.color.primaryTextColor));
@@ -2817,17 +2815,17 @@ public class MainActivity extends AppCompatActivity {
 	private void updateBreadcrumbText() {
 		if (layoutNotebookBreadcrumb == null) return;
 		layoutNotebookBreadcrumb.removeAllViews();
-		
+
 		// Add "Root" link
 		addBreadcrumbItem("Root", "root", 1);
-		
+
 		for (int i = 0; i < navigationPathIds.size(); i++) {
 			TextView arrow = new TextView(this);
 			arrow.setText(" > ");
 			arrow.setTextColor(Color.parseColor("#888888"));
 			arrow.setTextSize(14);
 			layoutNotebookBreadcrumb.addView(arrow);
-			
+
 			final String id = navigationPathIds.get(i);
 			final String name = navigationPathNames.get(i);
 			final int level = i + 2;
@@ -2838,7 +2836,7 @@ public class MainActivity extends AppCompatActivity {
 	private void addBreadcrumbItem(String name, String id, int level) {
 		TextView tv = new TextView(this);
 		tv.setText(name);
-		
+
 		// Theme-aware color for breadcrumbs
 		if ((getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES) {
 			tv.setTextColor(Color.parseColor("#FFD700")); // Gold for dark mode
@@ -2848,24 +2846,24 @@ public class MainActivity extends AppCompatActivity {
 
 		tv.setTextSize(14);
 		tv.setTypeface(null, Typeface.BOLD);
-		
+
 		// Convert DP to PX for padding
 		float scale = getResources().getDisplayMetrics().density;
 		int padH = (int) (12 * scale + 0.5f);
 		int padV = (int) (6 * scale + 0.5f);
 		tv.setPadding(padH, padV, padH, padV);
-		
+
 		tv.setBackgroundResource(R.drawable.icon_outline_bg);
-		
+
 		LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
 				ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
 		int margin = (int) (4 * scale + 0.5f);
 		params.setMargins(margin, 0, margin, 0);
 		tv.setLayoutParams(params);
-		
+
 		tv.setOnClickListener(v -> {
 			if (currentParentId.equals(id)) return;
-			
+
 			if (id.equals("root")) {
 				navigationPathIds.clear();
 				navigationPathNames.clear();
@@ -2896,7 +2894,7 @@ public class MainActivity extends AppCompatActivity {
 			if (gd != null) {
 				gd.setColor(ContextCompat.getColor(this, R.color.searchBackgroundColor));
 			}
-			
+
 			// Dynamic text color for selected tab
 			if ((getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES) {
 				tab.setTextColor(Color.parseColor("#FFD700")); // Gold for dark mode
@@ -2936,7 +2934,7 @@ public class MainActivity extends AppCompatActivity {
 			viewFabOverlay.animate().alpha(1f).setDuration(200).start();
 
 			buttonPlus.animate().rotation(45f).setDuration(200).start();
-			
+
 			// Animation for buttons (Slide up + Alpha)
 			layoutSpeedDial.setAlpha(0f);
 			layoutSpeedDial.setTranslationY(100f);
@@ -2944,7 +2942,7 @@ public class MainActivity extends AppCompatActivity {
 		} else {
 			viewFabOverlay.animate().alpha(0f).setDuration(200).withEndAction(() -> viewFabOverlay.setVisibility(View.GONE)).start();
 			buttonPlus.animate().rotation(0f).setDuration(200).start();
-			
+
 			layoutSpeedDial.animate().alpha(0f).translationY(100f).setDuration(200).withEndAction(() -> layoutSpeedDial.setVisibility(View.GONE)).start();
 		}
 	}
@@ -2956,12 +2954,12 @@ public class MainActivity extends AppCompatActivity {
 	private void showModernMenu(boolean showNote, boolean showNotebook) {
 		final Dialog dialog = new Dialog(this);
 		dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-		
+
 		// Create a nice container
 		LinearLayout container = new LinearLayout(this);
 		container.setOrientation(LinearLayout.VERTICAL);
 		container.setPadding(40, 60, 40, 60);
-		
+
 		// Set background color based on theme
 		int bgColor = ContextCompat.getColor(this, R.color.drawerBackgroundColor);
 		GradientDrawable shape = new GradientDrawable();
@@ -3000,7 +2998,7 @@ public class MainActivity extends AppCompatActivity {
 		item.setPadding(40, 45, 40, 45);
 		item.setClickable(true);
 		item.setFocusable(true);
-		
+
 		// Create a "Box" (Card) background
 		GradientDrawable box = new GradientDrawable();
 		box.setCornerRadius(30);
@@ -3038,28 +3036,28 @@ public class MainActivity extends AppCompatActivity {
 		isCurrentNotePinned = false;
 		currentNotePin = "";
 		currentNoteColor = "default";
-		
+
 		if (layoutSearchInNote != null) {
 			layoutSearchInNote.setVisibility(View.GONE);
 			clearSearchHighlights();
 		}
-		
+
 		isUndoRedoActive = true;
 		editNoteBody.setText("");
 		undoList.clear();
 		redoList.clear();
 		undoList.add("");
 		isUndoRedoActive = false;
-		
+
 		currentImagePaths.clear();
 		imagesAdapter.notifyDataSetChanged();
 		imagesRecyclerView.setVisibility(View.GONE);
-		
+
 		screenAddNote.setBackgroundColor(ContextCompat.getColor(this, R.color.backgroundColor));
 		screenList.setVisibility(View.GONE);
 		screenAddNote.setVisibility(View.VISIBLE);
 		buttonPlus.setVisibility(View.GONE);
-		
+
 		// Setup editor UI
 		if (layoutFormatBar != null) layoutFormatBar.setVisibility(View.GONE);
 		buttonFormat.setVisibility(View.VISIBLE);
@@ -3069,9 +3067,9 @@ public class MainActivity extends AppCompatActivity {
 		editNoteBody.setHorizontallyScrolling(false);
 		// Enable standard text features for normal notes
 		editNoteBody.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-		
+
 		updateEditorToolbarIcons();
-		
+
 		// AUTO-FOCUS & KEYBOARD SHOW
 		editTitle.requestFocus();
 		mainHandler.postDelayed(() -> {
@@ -3093,7 +3091,7 @@ public class MainActivity extends AppCompatActivity {
 				}
 			}
 		}
-		
+
 		// 2. Remove Category
 		categoriesList.remove(category);
 		saveCategories();
@@ -3101,7 +3099,7 @@ public class MainActivity extends AppCompatActivity {
 		setupCategoriesInDrawer();
 		filterNotes("");
 		uploadBackupToDriveBackground(false);
-		
+
 		Toast.makeText(this, deleteNotesToo ? "Category and notes deleted" : "Category deleted, notes moved to General", Toast.LENGTH_LONG).show();
 	}
 
@@ -3110,7 +3108,7 @@ public class MainActivity extends AppCompatActivity {
 			Toast.makeText(this, "Maximum 5 levels of folders reached!", Toast.LENGTH_SHORT).show();
 			return;
 		}
-		
+
 		boolean isRoot = currentParentId.equals("root");
 		String title = isRoot ? "New Notebook" : "New Folder";
 		String hint = isRoot ? "Notebook Name" : "Folder Name";
@@ -3216,7 +3214,7 @@ public class MainActivity extends AppCompatActivity {
 				performLiveSearch(editSearchInNote.getText().toString());
 			} else clearSearchHighlights();
 		});
-		
+
 		editSearchInNote.addTextChangedListener(new TextWatcher() {
 			@Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
 			@Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
@@ -3266,7 +3264,7 @@ public class MainActivity extends AppCompatActivity {
 		btnH2.setOnClickListener(v -> toggleFormat("h2"));
 		btnClearToggles.setOnClickListener(v -> clearAllFormats());
 		btnCloseFormat.setOnClickListener(v -> layoutFormatBar.setVisibility(View.GONE));
-		
+
 		btnClearToggles.setText("T ✖"); // Visual cross as requested
 	}
 
@@ -3312,7 +3310,7 @@ public class MainActivity extends AppCompatActivity {
 	private void clearAllFormats() {
 		// Reset all toggle states
 		isBoldActive = isItalicActive = isUnderlineActive = isH1Active = isH2Active = false;
-		
+
 		// Update UI
 		updateButtonState(btnBold, false);
 		updateButtonState(btnItalic, false);
@@ -3327,9 +3325,9 @@ public class MainActivity extends AppCompatActivity {
 			Editable editable = editNoteBody.getText();
 			Object[] spans = editable.getSpans(start, end, Object.class);
 			for (Object span : spans) {
-				if (span instanceof StyleSpan || span instanceof UnderlineSpan || 
-					span instanceof RelativeSizeSpan || span instanceof TypefaceSpan ||
-					span instanceof ForegroundColorSpan || span instanceof BackgroundColorSpan) {
+				if (span instanceof StyleSpan || span instanceof UnderlineSpan ||
+						span instanceof RelativeSizeSpan || span instanceof TypefaceSpan ||
+						span instanceof ForegroundColorSpan || span instanceof BackgroundColorSpan) {
 					editable.removeSpan(span);
 				}
 			}
@@ -3358,7 +3356,7 @@ public class MainActivity extends AppCompatActivity {
 	private void showColorPicker() {
 		final String[] colors = {"#121212", "#FF5555", "#55FF55", "#5555FF", "#FFFF55", "#FF55FF", "#55FFFF"};
 		final String[] names = {"Default", "Red", "Green", "Blue", "Yellow", "Pink", "Cyan"};
-		
+
 		new AlertDialog.Builder(this)
 				.setTitle("Pick Note Color")
 				.setItems(names, (dialog, which) -> {
@@ -3418,7 +3416,7 @@ public class MainActivity extends AppCompatActivity {
 	private void showCategoryPicker() {
 		final ArrayList<String> options = new ArrayList<>(categoriesList);
 		options.add(0, "+ Add New Category"); // Add special option at the top
-		
+
 		String[] cats = options.toArray(new String[0]);
 		new AlertDialog.Builder(this)
 				.setTitle("Select Category")
@@ -3514,7 +3512,7 @@ public class MainActivity extends AppCompatActivity {
 						y += 15;
 					} else {
 						// Basic wrap logic
-						int charsPerLine = 85; 
+						int charsPerLine = 85;
 						for (int i = 0; i < line.length(); i += charsPerLine) {
 							if (y > pageHeight - margin) {
 								document.finishPage(page);
@@ -3590,7 +3588,7 @@ public class MainActivity extends AppCompatActivity {
 		for (int i = 0; i < searchInNoteMatchIndices.size(); i++) {
 			int start = searchInNoteMatchIndices.get(i);
 			int end = start + query.length();
-			
+
 			int color;
 			if (i == currentSearchInNoteMatchPos) {
 				color = Color.parseColor("#FF9800"); // Orange for current match
@@ -3600,7 +3598,7 @@ public class MainActivity extends AppCompatActivity {
 			}
 			editable.setSpan(new BackgroundColorSpan(color), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
 		}
-		
+
 		textSearchInNoteCount.setText((currentSearchInNoteMatchPos + 1) + "/" + searchInNoteMatchIndices.size());
 	}
 
@@ -3621,7 +3619,7 @@ public class MainActivity extends AppCompatActivity {
 		searchInNoteMatchIndices.clear();
 		currentSearchInNoteMatchPos = -1;
 		if (textSearchInNoteCount != null) textSearchInNoteCount.setText("0/0");
-		
+
 		Editable s = editNoteBody.getText();
 		BackgroundColorSpan[] spans = s.getSpans(0, s.length(), BackgroundColorSpan.class);
 		for (BackgroundColorSpan span : spans) {
@@ -3692,7 +3690,7 @@ public class MainActivity extends AppCompatActivity {
 	private void speakNote() {
 		String text = editNoteBody.getText().toString();
 		if (text.isEmpty()) return;
-		
+
 		if (textToSpeech != null && textToSpeech.isSpeaking()) {
 			textToSpeech.stop();
 			buttonSpeak.setText("🔊");
@@ -3719,7 +3717,7 @@ public class MainActivity extends AppCompatActivity {
 			new TimePickerDialog(this, (v, hour, minute) -> {
 				Calendar selected = Calendar.getInstance();
 				selected.set(year, month, day, hour, minute);
-				
+
 				// New choice: Once or Every Day
 				String[] choices = {"Only Once", "Every Day"};
 				new AlertDialog.Builder(this)
@@ -3728,7 +3726,7 @@ public class MainActivity extends AppCompatActivity {
 							boolean isDaily = (which == 1);
 							setAlarm(selected.getTimeInMillis(), isDaily);
 						}).show();
-						
+
 			}, c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), false).show();
 		}, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show();
 	}
@@ -3738,7 +3736,7 @@ public class MainActivity extends AppCompatActivity {
 		intent.putExtra("title", editTitle.getText().toString());
 		PendingIntent pi = PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 		AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
-		
+
 		if (am != null) {
 			if (isDaily) {
 				// Daily repeating alarm
@@ -3752,7 +3750,7 @@ public class MainActivity extends AppCompatActivity {
 				}
 			}
 		}
-		
+
 		// Persistence: Save alarm status to the current note
 		if (currentEditingNoteId != null) {
 			for (HashMap<String, String> n : allNotesList) {
@@ -3779,7 +3777,7 @@ public class MainActivity extends AppCompatActivity {
 			input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
 			input.setHint("Enter 4-digit PIN");
 			input.setPadding(50, 50, 50, 50);
-			
+
 			new AlertDialog.Builder(this)
 					.setTitle("Set Note PIN")
 					.setMessage("Set a PIN to lock this note.")
@@ -3812,11 +3810,11 @@ public class MainActivity extends AppCompatActivity {
 		try {
 			char[] chars = pin.toCharArray();
 			byte[] salt = getDynamicSalt("pin_security_salt_v3");
-			
+
 			javax.crypto.spec.PBEKeySpec spec = new javax.crypto.spec.PBEKeySpec(chars, salt, 600000, 256);
 			javax.crypto.SecretKeyFactory skf = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
 			byte[] hash = skf.generateSecret(spec).getEncoded();
-			
+
 			StringBuilder hexString = new StringBuilder();
 			for (byte b : hash) {
 				String hex = Integer.toHexString(0xff & b);
@@ -3835,7 +3833,7 @@ public class MainActivity extends AppCompatActivity {
 		SharedPreferences sp = getSharedPreferences("SecureConfig", MODE_PRIVATE);
 		// SECURE: Salts are now stored ENCRYPTED (Finding 007 Fix)
 		String saltEncBase64 = sp.getString(keyName + "_enc", null);
-		
+
 		if (saltEncBase64 == null) {
 			// Generate a fresh 32-byte cryptographically random salt
 			byte[] newSalt = new byte[32];
@@ -3881,23 +3879,23 @@ public class MainActivity extends AppCompatActivity {
 		String text = editNoteBody.getText().toString().trim();
 		int charCount = text.length();
 		int wordCount = text.isEmpty() ? 0 : text.split("\\s+").length;
-		
+
 		String info = String.format(Locale.getDefault(), "%d words | %d characters", wordCount, charCount);
 		textWordCount.setText(info);
 	}
-	private void toggleViewMode() { 
-		if (listViewNotes.getVisibility() == View.VISIBLE) { 
-			listViewNotes.setVisibility(View.GONE); 
-			gridViewNotes.setVisibility(View.VISIBLE); 
+	private void toggleViewMode() {
+		if (listViewNotes.getVisibility() == View.VISIBLE) {
+			listViewNotes.setVisibility(View.GONE);
+			gridViewNotes.setVisibility(View.VISIBLE);
 			getSharedPreferences("MyNotesData", MODE_PRIVATE).edit().putString("view_mode", "grid").apply();
-		} else { 
-			gridViewNotes.setVisibility(View.GONE); 
-			listViewNotes.setVisibility(View.VISIBLE); 
+		} else {
+			gridViewNotes.setVisibility(View.GONE);
+			listViewNotes.setVisibility(View.VISIBLE);
 			getSharedPreferences("MyNotesData", MODE_PRIVATE).edit().putString("view_mode", "list").apply();
-		} 
+		}
 	}
 	private void handleIntentAction(Intent i) {}
-	
+
 	private void checkCameraPermissionAndOpen() {
 		if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
 			ActivityCompat.requestPermissions(this, new String[]{android.Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST);
@@ -3923,7 +3921,7 @@ public class MainActivity extends AppCompatActivity {
 			java.io.File photoFile = new java.io.File(imagesDir, "camera_temp_" + System.currentTimeMillis() + ".jpg");
 			// SECURE: Path stored ONLY in memory (F-009 Fix)
 			pendingCameraPhotoPath = photoFile.getAbsolutePath();
-			
+
 			Uri photoURI = androidx.core.content.FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", photoFile);
 			Intent intent = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
 			intent.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, photoURI);
@@ -3939,7 +3937,7 @@ public class MainActivity extends AppCompatActivity {
 		currentImagePaths.add(path);
 		imagesAdapter.notifyItemInserted(currentImagePaths.size() - 1);
 		imagesRecyclerView.setVisibility(View.VISIBLE);
-		
+
 		// Clear pending path from SharedPreferences since it's now handled
 		getSharedPreferences("MyNotesData", MODE_PRIVATE).edit()
 				.remove("pendingCameraPhotoPath")
@@ -3978,7 +3976,7 @@ public class MainActivity extends AppCompatActivity {
 	private void toggleNoteSelection(String id) {
 		if (selectedNoteIds.contains(id)) selectedNoteIds.remove(id);
 		else selectedNoteIds.add(id);
-		
+
 		if (selectedNoteIds.isEmpty()) exitSelectionMode();
 		else {
 			updateSelectionCount();
@@ -4037,7 +4035,7 @@ public class MainActivity extends AppCompatActivity {
 
 	private void togglePinSelected() {
 		if (selectedNoteIds.isEmpty()) return;
-		
+
 		// Find if the first selected item is pinned to decide action
 		boolean shouldPin = true;
 		for (HashMap<String, String> n : allNotesList) {
@@ -4053,7 +4051,7 @@ public class MainActivity extends AppCompatActivity {
 				n.put("modified_at", String.valueOf(System.currentTimeMillis()));
 			}
 		}
-		
+
 		saveNotesToStorage();
 		exitSelectionMode();
 		filterNotes("");
@@ -4063,7 +4061,7 @@ public class MainActivity extends AppCompatActivity {
 
 	private void restoreSelectedNotes() {
 		if (selectedNoteIds.isEmpty()) return;
-		
+
 		ArrayList<String> idsToRestore = new ArrayList<>(selectedNoteIds);
 		// Cascading Restore: If a folder is restored, its children should be too
 		// AND if a note is restored, its parent folders MUST be restored too
@@ -4103,9 +4101,9 @@ public class MainActivity extends AppCompatActivity {
 
 	private void deleteSelectedNotes() {
 		if (selectedNoteIds.isEmpty()) return;
-		
+
 		String title = isBinMode ? "Delete Permanently" : "Move to Bin";
-		String msg = isBinMode ? "Are you sure you want to permanently delete these " + selectedNoteIds.size() + " items?" 
+		String msg = isBinMode ? "Are you sure you want to permanently delete these " + selectedNoteIds.size() + " items?"
 				: "Move " + selectedNoteIds.size() + " items to the Recycle Bin?";
 
 		new AlertDialog.Builder(this)
@@ -4124,7 +4122,7 @@ public class MainActivity extends AppCompatActivity {
 								}
 							}
 						}
-						
+
 						java.util.Iterator<HashMap<String, String>> it = allNotesList.iterator();
 						while (it.hasNext()) {
 							HashMap<String, String> item = it.next();
@@ -4144,7 +4142,7 @@ public class MainActivity extends AppCompatActivity {
 								}
 							}
 						}
-						
+
 						for (HashMap<String, String> n : allNotesList) {
 							if (idsToTrash.contains(n.get("id"))) {
 								n.put("isTrashed", "true");
@@ -4276,11 +4274,11 @@ public class MainActivity extends AppCompatActivity {
 	}
 	private void showManageCategoriesDialog() {
 		final ArrayList<String> tempCategories = new ArrayList<>(categoriesList);
-		
+
 		LinearLayout layout = new LinearLayout(this);
 		layout.setOrientation(LinearLayout.VERTICAL);
 		layout.setPadding(40, 20, 40, 20);
-		
+
 		ScrollView scrollView = new ScrollView(this);
 		scrollView.addView(layout);
 
@@ -4337,7 +4335,7 @@ public class MainActivity extends AppCompatActivity {
 				RelativeLayout.LayoutParams lpDel = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
 				lpDel.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
 				lpDel.addRule(RelativeLayout.CENTER_VERTICAL);
-				
+
 				btnDel.setOnClickListener(v -> {
 					new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
 							.setTitle("Delete " + cat + "?")
@@ -4359,9 +4357,9 @@ public class MainActivity extends AppCompatActivity {
 				});
 				row.addView(btnDel, lpDel);
 			}
-			
+
 			container.addView(row);
-			
+
 			// Divider
 			View divider = new View(this);
 			divider.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
@@ -4382,7 +4380,7 @@ public class MainActivity extends AppCompatActivity {
 		try {
 			JSONArray arr = new JSONArray(categoriesList);
 			String plainJson = arr.toString();
-			
+
 			// SECURE: Use MASTER Key (Sakt) for category list
 			String secureData = secureEncrypt(plainJson, true);
 			if (secureData != null) {
@@ -4408,7 +4406,7 @@ public class MainActivity extends AppCompatActivity {
 		SharedPreferences sp = getSharedPreferences("MyNotesData", MODE_PRIVATE);
 		String secureData = sp.getString("categories_list_secure", null);
 		String json = null;
-		
+
 		try {
 			if (secureData != null) {
 				byte[] comb = android.util.Base64.decode(secureData, android.util.Base64.DEFAULT);
@@ -4453,7 +4451,7 @@ public class MainActivity extends AppCompatActivity {
 		if (pinIcon != null) pinIcon.setVisibility(View.GONE);
 		if (lockIcon != null) lockIcon.setVisibility(View.GONE);
 		if (alarmIcon != null) alarmIcon.setVisibility(View.GONE);
-		
+
 		String color = note.get("color");
 		android.graphics.drawable.Drawable background = container.getBackground();
 		int bgColor;
@@ -4480,7 +4478,7 @@ public class MainActivity extends AppCompatActivity {
 
 		if ("true".equals(note.get("isFolder"))) {
 			String level = note.get("level");
-			
+
 			if (level != null && level.equals("1")) {
 				String[] bookIcons = {"📘", "📙", "📗", "📕", "📔"};
 				int iconIndex = Math.abs(displayTitle.hashCode()) % bookIcons.length;
@@ -4515,14 +4513,14 @@ public class MainActivity extends AppCompatActivity {
 			// It's a note - Add a note icon to distinguish from folders
 			String parentId = note.get("parentId");
 			boolean isInFolder = parentId != null && !"root".equals(parentId);
-			
+
 			String icon = isInFolder ? "📖" : "📄";
 
 			android.text.SpannableString ss = new android.text.SpannableString(icon + "  " + displayTitle);
 			// Make icon 20% larger
 			ss.setSpan(new android.text.style.RelativeSizeSpan(1.2f), 0, icon.length(), android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
 			if (tTitle != null) tTitle.setText(ss);
-			
+
 			// SET NOTE PREVIEW (SNIPPET)
 			String body = note.get("fullBody");
 			String imagesJson = note.get("images");
@@ -4575,7 +4573,7 @@ public class MainActivity extends AppCompatActivity {
 				checkmark.setVisibility(View.GONE);
 			}
 		}
-		
+
 		if (pinIcon != null) {
 			// Show pin icon ONLY if not in Recent mode
 			pinIcon.setVisibility(!isRecentMode && "true".equals(note.get("isPinned")) ? View.VISIBLE : View.GONE);
@@ -4612,7 +4610,7 @@ public class MainActivity extends AppCompatActivity {
 	private String getParentPath(HashMap<String, String> note) {
 		String parentId = note.get("parentId");
 		String section = "Notes";
-		
+
 		if ("true".equals(note.get("isFolder"))) {
 			section = "Notebooks";
 		}
@@ -4623,10 +4621,10 @@ public class MainActivity extends AppCompatActivity {
 		}
 
 		if (parentId == null || "root".equals(parentId)) return section;
-		
+
 		StringBuilder fullPath = new StringBuilder();
 		String currentId = parentId;
-		
+
 		// Recursively build the path from item to root
 		while (currentId != null && !"root".equals(currentId)) {
 			boolean found = false;
@@ -4643,7 +4641,7 @@ public class MainActivity extends AppCompatActivity {
 				currentId = null; // Break loop if parent not found
 			}
 		}
-		
+
 		if (fullPath.length() == 0) return section;
 		return section + " > " + fullPath.toString();
 	}
@@ -4657,7 +4655,7 @@ public class MainActivity extends AppCompatActivity {
 						Toast.makeText(this, "Maximum 5 levels of folders reached!", Toast.LENGTH_SHORT).show();
 						return;
 					}
-					
+
 					final EditText input = new EditText(this);
 					input.setHint(which == 0 ? "Note Title" : "Folder Name");
 					new AlertDialog.Builder(this)
@@ -4720,7 +4718,7 @@ public class MainActivity extends AppCompatActivity {
 			filterNotes(""); updateBreadcrumbText();
 			return;
 		}
-		
+
 		// If searching, clear search
 		if (!searchBar.getText().toString().isEmpty()) {
 			searchBar.setText("");
@@ -4757,9 +4755,9 @@ public class MainActivity extends AppCompatActivity {
 	@Override
 	protected void onPause() {
 		super.onPause();
-		
-		// SECURE AUTO-SAVE: Commit current note to DISK immediately (F-AutoSave Fix)
-		if (isVaultUnlocked && screenAddNote != null && screenAddNote.getVisibility() == View.VISIBLE) {
+
+		// FIX: Auto-save ke liye vault lock check hata diya — user ka note app pause pe hamesha save hoga
+		if (screenAddNote != null && screenAddNote.getVisibility() == View.VISIBLE) {
 			saveCurrentNote();
 		}
 
