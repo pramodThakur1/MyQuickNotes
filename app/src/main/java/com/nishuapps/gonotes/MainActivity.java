@@ -2329,6 +2329,9 @@ public class MainActivity extends AppCompatActivity {
 							.putString("notes_json_secure", encrypted)
 							.remove("notes_json")
 							.apply();
+					// FIX: In-memory notes bhi update karo — warna badge is launch mein
+					// "Plain" hi dikhta rahega (SharedPreferences update hua, allNotesList nahi)
+					applyStorageModeToAllNotes("encrypted");
 					android.util.Log.d("NoteStorage", "Migration complete: plain notes encrypted and notes_json removed");
 				} else {
 					android.util.Log.e("NoteStorage", "Migration failed: encryption returned null");
@@ -2385,9 +2388,10 @@ public class MainActivity extends AppCompatActivity {
 				HashMap<String, String> m = new HashMap<>();
 				java.util.Iterator<String> ks = o.keys();
 				while (ks.hasNext()) { String k = ks.next(); m.put(k, o.getString(k)); }
-				if (m.get("storageMode") == null || m.get("storageMode").isEmpty()) {
-					m.put("storageMode", storageMode);
-				}
+				// FIX: storageMode hamesha loading source se set karo.
+				// JSON ke andar baked "plain" value pe depend mat karo —
+				// notes_json_secure se load ho raha hai toh "encrypted" milna chahiye.
+				m.put("storageMode", storageMode);
 				tempNotes.add(m);
 			}
 			allNotesList.clear();
