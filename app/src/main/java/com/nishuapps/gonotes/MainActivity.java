@@ -2357,10 +2357,17 @@ public class MainActivity extends AppCompatActivity {
 				if (json != null && !json.isEmpty()) {
 					loadNotesFromJson(json, "encrypted");
 					return;
+				} else {
+					// FIX: Stale/purani key se encrypted data clear karo
+					// Naya key banega aur migrateIfNeeded re-encrypt karega
+					sp.edit().remove("notes_json_secure").apply();
+					android.util.Log.w("NoteStorage", "Stale notes_json_secure cleared — will re-encrypt from plaintext.");
 				}
 			}
 			if (plainJson != null && !plainJson.isEmpty()) {
 				loadNotesFromJson(plainJson, "plain");
+				// FIX: Plain se load ke baad turant re-encrypt karo
+				migrateIfNeeded();
 				return;
 			}
 		} catch (Exception e) {
