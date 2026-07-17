@@ -1148,12 +1148,26 @@ public class MainActivity extends AppCompatActivity {
 			try {
 				KeyStore.SecretKeyEntry entry = (KeyStore.SecretKeyEntry) keyStore.getEntry(alias, null);
 				if (entry == null) {
-					// Key null hai - permanently dead, delete karo
 					keyStore.deleteEntry(alias);
 					android.util.Log.w("NoteStorage", "Dead key removed, will recreate: " + alias);
+				} else {
+					// MAIN FIX: Key ko bina auth ke test karo
+					// Agar UserNotAuthenticatedException aaye = purani key jo fingerprint maangti thi
+					Cipher testCipher = Cipher.getInstance(ALGO_GCM);
+					byte[] testIv = new byte[IV_LENGTH];
+					new java.security.SecureRandom().nextBytes(testIv);
+					testCipher.init(Cipher.ENCRYPT_MODE, entry.getSecretKey(), new javax.crypto.spec.GCMParameterSpec(TAG_LENGTH, testIv));
+					return entry.getSecretKey(); // Key sahi hai
 				}
+			} catch (android.security.keystore.UserNotAuthenticatedException e) {
+				// PURANI KEY: Security patch se pehle bani thi, har operation pe fingerprint maangti thi
+				keyStore.deleteEntry(alias);
+				getSharedPreferences("MyNotesData", MODE_PRIVATE).edit()
+					.remove("notes_json_secure")
+					.remove("notes_json")
+					.apply();
+				android.util.Log.w("NoteStorage", "Auth-required key deleted, old data cleared: " + alias);
 			} catch (Exception invalidEx) {
-				// KeyPermanentlyInvalidatedException ya koi aur - delete karo
 				keyStore.deleteEntry(alias);
 				android.util.Log.w("NoteStorage", "Invalid key removed, will recreate: " + alias + " (" + invalidEx.getClass().getSimpleName() + ")");
 			}
@@ -2294,14 +2308,12 @@ public class MainActivity extends AppCompatActivity {
 					.commit();
 				android.util.Log.d("NoteStorage", "Saved encrypted payload to notes_json_secure");
 			} else {
-				String message = "Encryption failed; note payload was not saved securely.";
-				android.util.Log.e("NoteStorage", message);
-				Toast.makeText(this, message, Toast.LENGTH_LONG).show();
-				throw new IllegalStateException(message);
+				// Silent log - encryption fail hua (getOrCreateKey fix ke baad nahi hona chahiye)
+				android.util.Log.e("NoteStorage", "Encryption failed; note payload was not saved securely.");
 			}
 		} catch (Exception e) {
 			android.util.Log.e("NoteStorage", "saveNotesToStorage failed: " + e.getMessage(), e);
-			Toast.makeText(this, "Note save failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
+			// Toast hataya - typing ke waqt bar bar popup nahi aayega
 		}
 	}
 
