@@ -1860,6 +1860,15 @@ public class MainActivity extends AppCompatActivity {
         screenAddNote.setVisibility(View.GONE);
         screenList.setVisibility(View.VISIBLE);
         if (!isBinMode && !isSelectionMode) buttonPlus.setVisibility(View.VISIBLE);
+        // FIX BUG 1: Note editor se wapas aane par hamesha Recent tab reset karo
+        // Warna selectedCategoryFilter ya isNormalFilterMode active rehta hai
+        // aur filterNotes sirf filtered notes dikhata hai, baki categories ke notes hide ho jaate hain
+        isRecentMode = true;
+        isNormalFilterMode = false;
+        isNotebookMode = false;
+        isBinMode = false;
+        selectedCategoryFilter = "All";
+        updateFilterTabsUI();
         filterNotes("");
     }
 
@@ -2314,9 +2323,13 @@ public class MainActivity extends AppCompatActivity {
                 if (gridAdapter != null) gridAdapter.notifyDataSetChanged();
                 android.util.Log.d("NoteStorage", "Saved encrypted payload to notes_json_secure");
             } else {
-                // FIX: Encryption fail hone par plaintext fallback mein save karo taaki notes lost na hon
-                android.util.Log.e("NoteStorage", "Encryption failed; saving as plaintext fallback to prevent data loss.");
-                editor.putString("notes_json", plainJson).commit();
+                // FIX BUG 2: Encryption fail hone par plaintext fallback mein save karo taaki notes lost na hon
+                // Aur notes_json_secure ko bhi remove karo — warna next app restart mein
+                // loadNotesFromStorage() purana encrypted data load karega aur notes_json ignore karega
+                android.util.Log.e("NoteStorage", "Encryption failed; saving as plaintext fallback.");
+                editor.putString("notes_json", plainJson)
+                        .remove("notes_json_secure")
+                        .commit();
             }
         } catch (Exception e) {
             android.util.Log.e("NoteStorage", "saveNotesToStorage failed: " + e.getMessage(), e);
