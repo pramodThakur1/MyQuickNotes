@@ -184,6 +184,7 @@ public class MainActivity extends AppCompatActivity {
     private LinearLayout layoutCategoriesInDrawer;
     private ArrayList<String> currentImagePaths = new ArrayList<>();
     private static final int CAMERA_PERMISSION_REQUEST = 200;
+    private static final int NOTIFICATION_PERMISSION_REQUEST = 201;
     private String pendingCameraPhotoPath;
 
     private ArrayList<String> categoriesList = new ArrayList<>();
@@ -358,6 +359,16 @@ public class MainActivity extends AppCompatActivity {
             channel.setLockscreenVisibility(android.app.Notification.VISIBILITY_PRIVATE);
             android.app.NotificationManager nm = getSystemService(android.app.NotificationManager.class);
             if (nm != null) nm.createNotificationChannel(channel);
+        }
+
+        // Android 13+ par POST_NOTIFICATIONS runtime permission request
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this,
+                        new String[]{android.Manifest.permission.POST_NOTIFICATIONS},
+                        NOTIFICATION_PERMISSION_REQUEST);
+            }
         }
 
         // SECURE: Block screenshots and recent-apps thumbnails globally (C3 Fix)
@@ -1147,30 +1158,34 @@ public class MainActivity extends AppCompatActivity {
         KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
         keyStore.load(null);
 
-        // FIX: Agar purani key permanently invalidate ho gayi ho (biometric change ke baad)
-        // toh usse delete karo taaki fresh key ban sake
         if (keyStore.containsAlias(alias)) {
+            KeyStore.SecretKeyEntry entry = null;
             try {
-                KeyStore.SecretKeyEntry entry = (KeyStore.SecretKeyEntry) keyStore.getEntry(alias, null);
-                if (entry == null) {
-                    keyStore.deleteEntry(alias);
-                    android.util.Log.w("NoteStorage", "Dead key removed, will recreate: " + alias);
-                } else {
-                    // MAIN FIX: Key ko bina auth ke test karo
-                    // Agar UserNotAuthenticatedException aaye = purani key jo fingerprint maangti thi
+                entry = (KeyStore.SecretKeyEntry) keyStore.getEntry(alias, null);
+            } catch (Exception e) {
+                android.util.Log.w("NoteStorage", "getEntry failed for " + alias + ": " + e.getMessage());
+            }
+
+            if (entry == null) {
+                // Key slot exist karta hai but entry null hai — dead slot, safe to recreate
+                keyStore.deleteEntry(alias);
+                android.util.Log.w("NoteStorage", "Dead key slot removed, will recreate: " + alias);
+            } else {
+                // Key entry mil gayi — test karo sirf auth-requirement check ke liye
+                try {
                     Cipher testCipher = Cipher.getInstance(ALGO_GCM);
-                    // FIX: Caller IV nahi de sakta AndroidKeyStore keys mein (same bug as secureEncrypt)
                     testCipher.init(Cipher.ENCRYPT_MODE, entry.getSecretKey());
-                    return entry.getSecretKey(); // Key sahi hai
+                    return entry.getSecretKey(); // Key perfectly fine hai
+                } catch (android.security.keystore.UserNotAuthenticatedException e) {
+                    // Purani key thi jo fingerprint maangti thi — sirf yahi case mein delete karo
+                    keyStore.deleteEntry(alias);
+                    android.util.Log.w("NoteStorage", "Auth-required key removed, recreating without auth: " + alias);
+                } catch (Exception testEx) {
+                    // Kisi bhi aur exception par key DELETE MAT KARO — data loss hoga!
+                    // Key return karo; actual encrypt/decrypt apni jagah handle karega.
+                    android.util.Log.w("NoteStorage", "Key test warning (key kept): " + alias + " — " + testEx.getClass().getSimpleName());
+                    return entry.getSecretKey();
                 }
-            } catch (android.security.keystore.UserNotAuthenticatedException e) {
-                // FIX: Sirf purani key delete karo — notes SharedPreferences se mat hatao.
-                // Biometric/fingerprint change hone pe notes wipe nahi honge.
-                keyStore.deleteEntry(alias);
-                android.util.Log.w("NoteStorage", "Auth-required key deleted, notes preserved, will recreate key: " + alias);
-            } catch (Exception invalidEx) {
-                keyStore.deleteEntry(alias);
-                android.util.Log.w("NoteStorage", "Invalid key removed, will recreate: " + alias + " (" + invalidEx.getClass().getSimpleName() + ")");
             }
         }
 
@@ -2379,36 +2394,78 @@ public class MainActivity extends AppCompatActivity {
     private void loadNotesFromStorage() {
         SharedPreferences sp = getSharedPreferences("MyNotesData", MODE_PRIVATE);
         String secureData = sp.getString("notes_json_secure", null);
-        String plainJson = sp.getString("notes_json", null);
+        String plainJson  = sp.getString("notes_json", null);
         if (secureData == null && plainJson == null) {
             filterNotes("");
             return;
         }
 
         try {
+            String secureJson = null;
             if (secureData != null) {
-                String json = secureDecrypt(secureData, true);
-                if (json == null || json.isEmpty()) {
-                    json = secureDecrypt(secureData, false);
+                secureJson = secureDecrypt(secureData, true);
+                if (secureJson == null || secureJson.isEmpty()) {
+                    secureJson = secureDecrypt(secureData, false);
                 }
-                if (json != null && !json.isEmpty()) {
-                    loadNotesFromJson(json, "encrypted");
-                    return;
-                } else {
-                    // FIX: Stale/purani key se encrypted data clear karo
-                    // Naya key banega aur migrateIfNeeded re-encrypt karega
+                if (secureJson == null || secureJson.isEmpty()) {
+                    // Stale/corrupt encrypted data — clear karo
                     sp.edit().remove("notes_json_secure").apply();
-                    android.util.Log.w("NoteStorage", "Stale notes_json_secure cleared — will re-encrypt from plaintext.");
+                    android.util.Log.w("NoteStorage", "Stale notes_json_secure cleared.");
+                    secureJson = null;
                 }
             }
+
+            // MERGE FIX: Agar dono exist karte hain toh union lo (ID se deduplicate,
+            // newer timestamp wali note jeetegi). Ye update ke baad notes loss rokta hai
+            // jab purane version ke secure (few notes) aur plain (many notes) dono present hon.
+            if (secureJson != null && plainJson != null && !plainJson.isEmpty()) {
+                android.util.Log.d("NoteStorage", "Both sources found — merging notes.");
+                JSONArray secArr  = new JSONArray(secureJson);
+                JSONArray plainArr = new JSONArray(plainJson);
+                // ID → note map; plain notes pehle, secure baad mein (newer wins on conflict)
+                java.util.LinkedHashMap<String, JSONObject> merged = new java.util.LinkedHashMap<>();
+                for (int i = 0; i < plainArr.length(); i++) {
+                    JSONObject o = plainArr.getJSONObject(i);
+                    merged.put(o.optString("id", "plain_" + i), o);
+                }
+                for (int i = 0; i < secArr.length(); i++) {
+                    JSONObject o = secArr.getJSONObject(i);
+                    String id = o.optString("id", "sec_" + i);
+                    if (merged.containsKey(id)) {
+                        // Dono mein same ID — newer timestamp rakhein
+                        String tsPlain = merged.get(id).optString("timestamp", "0");
+                        String tsSec   = o.optString("timestamp", "0");
+                        if (compareDates(tsSec, tsPlain, true) <= 0) {
+                            merged.put(id, o); // secure wali newer hai
+                        }
+                        // else: plain wali already in map aur newer hai
+                    } else {
+                        merged.put(id, o);
+                    }
+                }
+                JSONArray mergedArr = new JSONArray();
+                for (JSONObject o : merged.values()) mergedArr.put(o);
+                String mergedJson = mergedArr.toString();
+                loadNotesFromJson(mergedJson, "encrypted");
+                // Merged result save karo taaki agli baar sirf ek source rahe
+                String reEncrypted = secureEncrypt(mergedJson, true);
+                if (reEncrypted != null) {
+                    sp.edit().putString("notes_json_secure", reEncrypted)
+                            .remove("notes_json").apply();
+                    android.util.Log.d("NoteStorage", "Merged + re-saved " + mergedArr.length() + " notes.");
+                }
+                return;
+            }
+
+            if (secureJson != null && !secureJson.isEmpty()) {
+                loadNotesFromJson(secureJson, "encrypted");
+                return;
+            }
+
             if (plainJson != null && !plainJson.isEmpty()) {
                 loadNotesFromJson(plainJson, "plain");
-                // FIX: Plain se load ke baad turant re-encrypt karo
                 migrateIfNeeded();
-                // FIX Bug2: migrateIfNeeded() ke baad in-memory storageMode "encrypted" ho
-                // jaata hai, lekin adapter ko khabar nahi milti — filterNotes se refresh karo
                 filterNotes("");
-                return;
             }
         } catch (Exception e) {
             e.printStackTrace();
