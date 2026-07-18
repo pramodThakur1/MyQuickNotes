@@ -1067,45 +1067,51 @@ public class MainActivity extends AppCompatActivity {
     private void uploadBackupToDrive() {
         if (driveService == null || executor.isShutdown()) return;
 
-        final com.google.android.gms.auth.api.signin.GoogleSignInAccount account = com.google.android.gms.auth.api.signin.GoogleSignIn.getLastSignedInAccount(this);
-        if (account == null || account.getId() == null) {
-            Toast.makeText(this, "Account error, please login again", Toast.LENGTH_SHORT).show();
-            return;
-        }
+        final EditText input = new EditText(this);
+        input.setHint("Set a password (Optional)");
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        input.setPadding(50, 40, 50, 40);
 
-        executor.execute(() -> {
-            try {
-                java.io.File exportsDir = new java.io.File(getCacheDir(), "exports");
-                if (!exportsDir.exists()) exportsDir.mkdirs();
+        new AlertDialog.Builder(this)
+                .setTitle("Backup Protection 🔒")
+                .setMessage("Set a password to recover notes if you reinstall or change phones. (Optional but recommended)")
+                .setView(input)
+                .setPositiveButton("Backup", (d, w) -> {
+                    String password = input.getText().toString();
+                    executor.execute(() -> {
+                        try {
+                            java.io.File tempFile = new java.io.File(getCacheDir(), "GoNotesPro_Backup.qnb");
+                            if (password.isEmpty()) {
+                                performExportSync(Uri.fromFile(tempFile));
+                            } else {
+                                performExportSyncWithKey(Uri.fromFile(tempFile), deriveKeyFromPassword(password));
+                            }
 
-                java.io.File tempFile = new java.io.File(exportsDir, "drive_upload.qnb");
-                // SECURE: Use Hardware-Bound key for cloud backup (F-Backup Fix)
-                // We no longer use the predictable Google Account ID.
-                performExportSyncWithKey(Uri.fromFile(tempFile), getBackupKey());
+                            File fileMetadata = new File().setName("GoNotesPro_Backup.qnb").setParents(java.util.Collections.singletonList("appDataFolder"));
+                            FileContent mediaContent = new FileContent("application/octet-stream", tempFile);
+                            FileList result = driveService.files().list().setSpaces("appDataFolder").execute();
+                            String existingId = null;
+                            if (result.getFiles() != null) {
+                                for (File f : result.getFiles()) { if ("GoNotesPro_Backup.qnb".equals(f.getName())) { existingId = f.getId(); break; } }
+                            }
 
-                File fileMetadata = new File().setName("GoNotesPro_Backup.qnb").setParents(java.util.Collections.singletonList("appDataFolder"));
-                FileContent mediaContent = new FileContent("application/octet-stream", tempFile);
-                FileList result = driveService.files().list().setSpaces("appDataFolder").execute();
-                String existingId = null;
-                if (result.getFiles() != null) {
-                    for (File f : result.getFiles()) { if ("GoNotesPro_Backup.qnb".equals(f.getName())) { existingId = f.getId(); break; } }
-                }
+                            if (existingId != null) driveService.files().update(existingId, null, mediaContent).execute();
+                            else driveService.files().create(fileMetadata, mediaContent).execute();
 
-                if (existingId != null) driveService.files().update(existingId, null, mediaContent).execute();
-                else driveService.files().create(fileMetadata, mediaContent).execute();
-
-                tempFile.delete();
-                mainHandler.post(() -> {
-                    long time = System.currentTimeMillis();
-                    getSharedPreferences("MyNotesData", MODE_PRIVATE).edit().putLong("last_sync", time).apply();
-                    updateLastSyncText(time);
-                    Toast.makeText(this, "Manual backup successful!", Toast.LENGTH_SHORT).show();
-                });
-            } catch (Exception e) {
-                e.printStackTrace();
-                mainHandler.post(() -> Toast.makeText(this, "Manual backup failed: " + e.getMessage(), Toast.LENGTH_SHORT).show());
-            }
-        });
+                            mainHandler.post(() -> {
+                                long time = System.currentTimeMillis();
+                                getSharedPreferences("MyNotesData", MODE_PRIVATE).edit().putLong("last_sync", time).apply();
+                                updateLastSyncText(time);
+                                Toast.makeText(this, "Backup uploaded successfully!", Toast.LENGTH_SHORT).show();
+                            });
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                            mainHandler.post(() -> Toast.makeText(this, "Backup failed: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                        }
+                    });
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     private void downloadBackupFromDrive() {
@@ -1135,7 +1141,7 @@ public class MainActivity extends AppCompatActivity {
                     final SecretKey accountKey = getBackupKey();
                     mainHandler.post(() -> {
                         try {
-                            performImportWithKey(Uri.fromFile(tempFile), accountKey);
+                            performImportWithKey(Uri.fromFile(tempFile), accountKey, true);
                         } catch (Exception e) { e.printStackTrace(); }
                     });
                 } else {
@@ -1175,10 +1181,15 @@ public class MainActivity extends AppCompatActivity {
                     keyStore.deleteEntry(alias);
                     android.util.Log.w("NoteStorage", "Auth-required key removed, recreating without auth: " + alias);
                 } catch (Exception testEx) {
-                    // Kisi bhi aur exception par key DELETE MAT KARO — data loss hoga!
-                    // Key return karo; actual encrypt/decrypt apni jagah handle karega.
-                    android.util.Log.w("NoteStorage", "Key test warning (key kept): " + alias + " — " + testEx.getClass().getSimpleName());
-                    return entry.getSecretKey();
+                    // FIX: Agar purani key IV issue de rahi hai, toh recreate karo.
+                    // "caller provided IV not permitted" aksar isi wajah se aata hai.
+                    if (testEx.getMessage() != null && testEx.getMessage().toLowerCase().contains("iv")) {
+                        keyStore.deleteEntry(alias);
+                        android.util.Log.e("NoteStorage", "IV restricted key deleted, will recreate: " + alias);
+                    } else {
+                        android.util.Log.w("NoteStorage", "Key test warning (key kept): " + alias + " — " + testEx.getMessage());
+                        return entry.getSecretKey();
+                    }
                 }
             }
         }
@@ -1193,7 +1204,8 @@ public class MainActivity extends AppCompatActivity {
                 KeyGenParameterSpec.Builder builder = new KeyGenParameterSpec.Builder(alias,
                         KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
                         .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                        .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE);
+                        .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                        .setRandomizedEncryptionRequired(true); // FIX: Allow system to generate random IV
                 keyGenerator.init(builder.build());
             } else {
                 keyGenerator.init(256);
@@ -1211,16 +1223,16 @@ public class MainActivity extends AppCompatActivity {
     // SECURE BACKUP EXPORT (Finding 001 Fix - NO HARDCODED MAGIC BYTES)
     private void performExportSyncWithKey(Uri uri, SecretKey key) throws Exception {
         OutputStream os = getContentResolver().openOutputStream(uri);
-        // New Format V3: [16-byte Random Signature] [1 Version] [12 Nonce] [Ciphertext]
+        // New Format V4: [16-byte Random Signature] [1 Version] [12 Nonce] [Ciphertext]
         byte[] signature = new byte[16];
         new java.security.SecureRandom().nextBytes(signature);
         os.write(signature);
-        os.write(3); // Version 3
+        os.write(4); // Version 4 (Randomized IV Support)
 
         Cipher cipher = Cipher.getInstance(ALGO_GCM);
-        byte[] nonce = new byte[IV_LENGTH];
-        new java.security.SecureRandom().nextBytes(nonce);
-        cipher.init(Cipher.ENCRYPT_MODE, key, new javax.crypto.spec.GCMParameterSpec(TAG_LENGTH, nonce));
+        // FIX: Let cipher generate the IV automatically to avoid "IV not permitted" error
+        cipher.init(Cipher.ENCRYPT_MODE, key);
+        byte[] nonce = cipher.getIV();
 
         os.write(nonce);
         CipherOutputStream cos = new CipherOutputStream(os, cipher);
@@ -1299,23 +1311,28 @@ public class MainActivity extends AppCompatActivity {
     private void performImport(Uri uri) {
         try {
             // Use MASTER key for import
-            performImportWithKey(uri, getOrCreateKey(MASTER_KEY_ALIAS, true));
+            performImportWithKey(uri, getOrCreateKey(MASTER_KEY_ALIAS, true), true);
         } catch (Exception e) { e.printStackTrace(); }
     }
 
     // SECURE BACKUP IMPORT (Finding 001 Fix)
-    private void performImportWithKey(Uri uri, SecretKey key) {
+    private void performImportWithKey(Uri uri, SecretKey key, boolean allowPasswordFallback) {
         if (executor.isShutdown()) return;
         executor.execute(() -> {
             try {
                 InputStream is = getContentResolver().openInputStream(uri);
                 if (is == null) throw new Exception("Failed to open input stream");
 
-                // 1. Skip Random Signature (V3 Format)
+                // 1. Skip Random Signature (V3/V4 Format)
                 is.skip(16);
 
                 // 2. Read Version and Nonce
                 int version = is.read();
+                if (version != 3 && version != 4) {
+                     mainHandler.post(() -> Toast.makeText(this, "Incompatible backup version: " + version, Toast.LENGTH_SHORT).show());
+                     return;
+                }
+
                 byte[] nonce = new byte[IV_LENGTH];
                 is.read(nonce);
 
@@ -1328,7 +1345,18 @@ public class MainActivity extends AppCompatActivity {
                 byte[] tmpBuf = new byte[4096]; int tmpLen;
                 while ((tmpLen = is.read(tmpBuf)) > 0) encBaos.write(tmpBuf, 0, tmpLen);
                 is.close();
-                byte[] decryptedBytes = cipher.doFinal(encBaos.toByteArray());
+                
+                byte[] decryptedBytes;
+                try {
+                    decryptedBytes = cipher.doFinal(encBaos.toByteArray());
+                } catch (Exception e) {
+                    if (allowPasswordFallback) {
+                        mainHandler.post(() -> showRecoveryPasswordDialog(uri));
+                        return;
+                    }
+                    throw e;
+                }
+
                 java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(
                         new java.io.ByteArrayInputStream(decryptedBytes));
                 java.util.zip.ZipEntry entry;
@@ -1425,12 +1453,12 @@ public class MainActivity extends AppCompatActivity {
                         Toast.makeText(this, "Restore successful!", Toast.LENGTH_SHORT).show();
                     } catch (Exception e) {
                         e.printStackTrace();
-                        Toast.makeText(this, "Restore failed: Data corrupted", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, "Restore failed: Key mismatch", Toast.LENGTH_SHORT).show();
                     }
                 });
             } catch (Exception e) {
                 e.printStackTrace();
-                mainHandler.post(() -> Toast.makeText(this, "Import failed: Check your Google Account", Toast.LENGTH_LONG).show());
+                mainHandler.post(() -> Toast.makeText(this, "Import failed: Check your Backup Password", Toast.LENGTH_LONG).show());
             }
         });
     }
@@ -1449,6 +1477,7 @@ public class MainActivity extends AppCompatActivity {
                         KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
                         .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                         .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                        .setRandomizedEncryptionRequired(true) // FIX: Randomized IV required
                         .build());
             } else {
                 kg.init(256);
@@ -4583,6 +4612,38 @@ public class MainActivity extends AppCompatActivity {
         java.util.Set<String> deletedIds = new java.util.HashSet<>(sp.getStringSet("deleted_note_ids", new java.util.HashSet<>()));
         deletedIds.add(id);
         sp.edit().putStringSet("deleted_note_ids", deletedIds).apply();
+    }
+
+    private SecretKey deriveKeyFromPassword(String password) throws Exception {
+        byte[] salt = "GoNotesRecoverySalt".getBytes();
+        javax.crypto.SecretKeyFactory factory = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+        javax.crypto.spec.PBEKeySpec spec = new javax.crypto.spec.PBEKeySpec(password.toCharArray(), salt, 65536, 256);
+        return new javax.crypto.spec.SecretKeySpec(factory.generateSecret(spec).getEncoded(), "AES");
+    }
+
+    private void showRecoveryPasswordDialog(Uri uri) {
+        final EditText input = new EditText(this);
+        input.setHint("Backup Password");
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        input.setPadding(50, 40, 50, 40);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Password Required 🔑")
+                .setMessage("Your hardware key was reset. Please enter the password you set during backup to restore your notes.")
+                .setView(input)
+                .setPositiveButton("Restore", (d, w) -> {
+                    String password = input.getText().toString();
+                    if (!password.isEmpty()) {
+                        try {
+                            SecretKey pKey = deriveKeyFromPassword(password);
+                            performImportWithKey(uri, pKey, false);
+                        } catch (Exception e) {
+                            Toast.makeText(this, "Invalid password", Toast.LENGTH_SHORT).show();
+                        }
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     private void loadCategories() {
