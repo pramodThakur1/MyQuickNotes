@@ -820,18 +820,12 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupGoogleDrive() {
-        // SECURE: Opaque XOR Masking (Finding F-003 Final Fix)
-        // We use a non-deterministic key derivation to defeat compile-time optimizations (Constant Folding).
-        int key = (android.os.Build.VERSION.SDK_INT > 0) ? 80 : 0; // Effectively 80
-        int[] m = {98, 104, 99, 96, 104, 100, 100, 98, 105, 96, 105, 103, 125, 54, 34, 97, 50, 100, 101, 59, 59, 54, 57, 98, 97, 96, 98, 32, 101, 49, 57, 104, 55, 37, 55, 58, 32, 57, 61, 57, 102, 100, 38, 103, 99, 126, 49, 32, 32, 35, 126, 55, 31, 31, 55, 28, 21, 37, 35, 21, 34, 19, 31, 30, 36, 21, 30, 36, 126, 19, 31, 61};
-        StringBuilder s = new StringBuilder();
-        for (int i : m) s.append((char) (i ^ key));
-        String serverClientId = s.toString();
-
-        // SECURE: Request ONLY the minimal 'appdata' scope (M2 Fix)
+        // FIX: requestIdToken() removed — serverClientId was corrupted (wrong domain casing)
+        // causing silent RESULT_CANCELED on account selection. ID token is not needed
+        // because initializeDriveService() uses GoogleAccountCredential.usingOAuth2()
+        // which only requires the account object and DRIVE_APPDATA scope.
         GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                 .requestEmail()
-                .requestIdToken(serverClientId)
                 .requestScopes(new com.google.android.gms.common.api.Scope(com.google.api.services.drive.DriveScopes.DRIVE_APPDATA))
                 .build();
         googleSignInClient = GoogleSignIn.getClient(this, gso);
