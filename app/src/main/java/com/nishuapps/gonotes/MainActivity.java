@@ -1067,51 +1067,42 @@ public class MainActivity extends AppCompatActivity {
     private void uploadBackupToDrive() {
         if (driveService == null || executor.isShutdown()) return;
 
-        final EditText input = new EditText(this);
-        input.setHint("Set a password (Optional)");
-        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        input.setPadding(50, 40, 50, 40);
+        // ACCOUNT-DERIVED KEY FIX: No password needed — key derived from Google account ID
+        com.google.android.gms.auth.api.signin.GoogleSignInAccount signedInAccount =
+                com.google.android.gms.auth.api.signin.GoogleSignIn.getLastSignedInAccount(this);
+        if (signedInAccount == null || signedInAccount.getId() == null) {
+            Toast.makeText(this, "Please sign in with Google first.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final String accountId = signedInAccount.getId();
 
-        new AlertDialog.Builder(this)
-                .setTitle("Backup Protection 🔒")
-                .setMessage("Set a password to recover notes if you reinstall or change phones. (Optional but recommended)")
-                .setView(input)
-                .setPositiveButton("Backup", (d, w) -> {
-                    String password = input.getText().toString();
-                    executor.execute(() -> {
-                        try {
-                            java.io.File tempFile = new java.io.File(getCacheDir(), "GoNotesPro_Backup.qnb");
-                            if (password.isEmpty()) {
-                                performExportSync(Uri.fromFile(tempFile));
-                            } else {
-                                performExportSyncWithKey(Uri.fromFile(tempFile), deriveKeyFromPassword(password));
-                            }
+        executor.execute(() -> {
+            try {
+                java.io.File tempFile = new java.io.File(getCacheDir(), "GoNotesPro_Backup.qnb");
+                performExportSyncWithKey(Uri.fromFile(tempFile), getAccountDerivedKey(accountId));
 
-                            File fileMetadata = new File().setName("GoNotesPro_Backup.qnb").setParents(java.util.Collections.singletonList("appDataFolder"));
-                            FileContent mediaContent = new FileContent("application/octet-stream", tempFile);
-                            FileList result = driveService.files().list().setSpaces("appDataFolder").execute();
-                            String existingId = null;
-                            if (result.getFiles() != null) {
-                                for (File f : result.getFiles()) { if ("GoNotesPro_Backup.qnb".equals(f.getName())) { existingId = f.getId(); break; } }
-                            }
+                File fileMetadata = new File().setName("GoNotesPro_Backup.qnb").setParents(java.util.Collections.singletonList("appDataFolder"));
+                FileContent mediaContent = new FileContent("application/octet-stream", tempFile);
+                FileList result = driveService.files().list().setSpaces("appDataFolder").execute();
+                String existingId = null;
+                if (result.getFiles() != null) {
+                    for (File f : result.getFiles()) { if ("GoNotesPro_Backup.qnb".equals(f.getName())) { existingId = f.getId(); break; } }
+                }
 
-                            if (existingId != null) driveService.files().update(existingId, null, mediaContent).execute();
-                            else driveService.files().create(fileMetadata, mediaContent).execute();
+                if (existingId != null) driveService.files().update(existingId, null, mediaContent).execute();
+                else driveService.files().create(fileMetadata, mediaContent).execute();
 
-                            mainHandler.post(() -> {
-                                long time = System.currentTimeMillis();
-                                getSharedPreferences("MyNotesData", MODE_PRIVATE).edit().putLong("last_sync", time).apply();
-                                updateLastSyncText(time);
-                                Toast.makeText(this, "Backup uploaded successfully!", Toast.LENGTH_SHORT).show();
-                            });
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                            mainHandler.post(() -> Toast.makeText(this, "Backup failed: " + e.getMessage(), Toast.LENGTH_SHORT).show());
-                        }
-                    });
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
+                mainHandler.post(() -> {
+                    long time = System.currentTimeMillis();
+                    getSharedPreferences("MyNotesData", MODE_PRIVATE).edit().putLong("last_sync", time).apply();
+                    updateLastSyncText(time);
+                    Toast.makeText(this, "Backup uploaded successfully!", Toast.LENGTH_SHORT).show();
+                });
+            } catch (Exception e) {
+                e.printStackTrace();
+                mainHandler.post(() -> Toast.makeText(this, "Backup failed: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        });
     }
 
     private void downloadBackupFromDrive() {
@@ -1137,8 +1128,9 @@ public class MainActivity extends AppCompatActivity {
                     os.close();
                     // SECURE: Explicitly set private permissions (CWE-276 Fix)
                     tempFile.setReadable(true, true);
-                    tempFile.setWritable(true, true);					// SECURE: Decrypt using Hardware-Bound key (F-Backup Fix)
-                    final SecretKey accountKey = getBackupKey();
+                    tempFile.setWritable(true, true);
+                    // ACCOUNT-DERIVED KEY FIX: Use account ID derived key (cross-device safe)
+                    final SecretKey accountKey = getAccountDerivedKey(account.getId());
                     mainHandler.post(() -> {
                         try {
                             performImportWithKey(Uri.fromFile(tempFile), accountKey, true);
@@ -1329,8 +1321,8 @@ public class MainActivity extends AppCompatActivity {
                 // 2. Read Version and Nonce
                 int version = is.read();
                 if (version != 3 && version != 4) {
-                     mainHandler.post(() -> Toast.makeText(this, "Incompatible backup version: " + version, Toast.LENGTH_SHORT).show());
-                     return;
+                    mainHandler.post(() -> Toast.makeText(this, "Incompatible backup version: " + version, Toast.LENGTH_SHORT).show());
+                    return;
                 }
 
                 byte[] nonce = new byte[IV_LENGTH];
@@ -1345,16 +1337,18 @@ public class MainActivity extends AppCompatActivity {
                 byte[] tmpBuf = new byte[4096]; int tmpLen;
                 while ((tmpLen = is.read(tmpBuf)) > 0) encBaos.write(tmpBuf, 0, tmpLen);
                 is.close();
-                
+
                 byte[] decryptedBytes;
                 try {
                     decryptedBytes = cipher.doFinal(encBaos.toByteArray());
                 } catch (Exception e) {
-                    if (allowPasswordFallback) {
-                        mainHandler.post(() -> showRecoveryPasswordDialog(uri));
-                        return;
-                    }
-                    throw e;
+                    // Account key se decrypt fail — backup incompatible hai
+                    mainHandler.post(() -> new AlertDialog.Builder(this)
+                            .setTitle("Backup Incompatible")
+                            .setMessage("Yeh backup restore nahi ho sakta. Please apne current phone se ek naya backup lo aur phir try karo.")
+                            .setPositiveButton("OK", null)
+                            .show());
+                    return;
                 }
 
                 java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(
@@ -1463,7 +1457,21 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    // SECURE BACKUP KEY DERIVATION (F-Backup Fix)
+    // ACCOUNT-DERIVED BACKUP KEY — Cross-device safe (Option 2 Fix)
+    // Key is derived from Google account numeric ID + package name via PBKDF2.
+    // Same Google account on any phone → same key → backup always restores.
+    private SecretKey getAccountDerivedKey(String accountId) throws Exception {
+        String input = accountId + getPackageName();
+        byte[] salt = "GoNotesAccountKeySalt_v1".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        javax.crypto.spec.PBEKeySpec spec = new javax.crypto.spec.PBEKeySpec(
+                input.toCharArray(), salt, 65536, 256);
+        javax.crypto.SecretKeyFactory factory = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+        byte[] keyBytes = factory.generateSecret(spec).getEncoded();
+        spec.clearPassword();
+        return new javax.crypto.spec.SecretKeySpec(keyBytes, "AES");
+    }
+
+    // SECURE BACKUP KEY DERIVATION (F-Backup Fix — kept for legacy fallback)
     private SecretKey getBackupKey() throws Exception {
         KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
         ks.load(null);
@@ -2014,8 +2022,13 @@ public class MainActivity extends AppCompatActivity {
 
         executor.execute(() -> {
             try {
+                // ACCOUNT-DERIVED KEY FIX: Use account ID derived key for auto-sync
+                com.google.android.gms.auth.api.signin.GoogleSignInAccount syncAccount =
+                        com.google.android.gms.auth.api.signin.GoogleSignIn.getLastSignedInAccount(this);
+                if (syncAccount == null || syncAccount.getId() == null) return;
+
                 java.io.File tempFile = new java.io.File(getCacheDir(), "auto_sync.qnb");
-                performExportSync(Uri.fromFile(tempFile));
+                performExportSyncWithKey(Uri.fromFile(tempFile), getAccountDerivedKey(syncAccount.getId()));
                 File fileMetadata = new File().setName("GoNotesPro_Backup.qnb").setParents(java.util.Collections.singletonList("appDataFolder"));
                 FileContent mediaContent = new FileContent("application/octet-stream", tempFile);
 
