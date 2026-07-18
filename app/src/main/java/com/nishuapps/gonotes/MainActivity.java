@@ -217,6 +217,7 @@ public class MainActivity extends AppCompatActivity {
     private final ArrayList<CharSequence> undoList = new ArrayList<>();
     private final ArrayList<CharSequence> redoList = new ArrayList<>();
     private final ArrayList<String> undoTitleList = new ArrayList<>(); // FIX BUG 7: Title undo tracking
+    private final ArrayList<String> redoTitleList = new ArrayList<>(); // Title redo tracking
     private boolean isUndoRedoActive = false;
     private boolean isKeyboardOpen = false;
     private boolean isVaultUnlocked = false; // SECURE GUARD: Prevent data wipe before auth
@@ -1797,6 +1798,7 @@ public class MainActivity extends AppCompatActivity {
         undoList.add(editNoteBody.getText().toString());
         undoTitleList.clear(); // FIX BUG 7: Title undo reset when note opens
         undoTitleList.add(n.get("title") != null ? n.get("title") : "");
+        redoTitleList.clear();
         isUndoRedoActive = false;
 
         currentImagePaths.clear();
@@ -3095,6 +3097,7 @@ public class MainActivity extends AppCompatActivity {
         undoList.add("");
         undoTitleList.clear(); // FIX BUG 7: Title undo reset for new note
         undoTitleList.add("");
+        redoTitleList.clear();
         isUndoRedoActive = false;
 
         currentImagePaths.clear();
@@ -3303,7 +3306,7 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // FIX BUG 7: Title ke changes bhi track karo undo ke liye
+        // FIX BUG 7: Title ke changes bhi track karo undo/redo ke liye
         editTitle.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
@@ -3311,6 +3314,7 @@ public class MainActivity extends AppCompatActivity {
                 if (!isUndoRedoActive) {
                     if (undoTitleList.size() > 50) undoTitleList.remove(0);
                     undoTitleList.add(s.toString());
+                    redoTitleList.clear(); // user ne type kiya toh redo history clear
                 }
             }
         });
@@ -3709,7 +3713,8 @@ public class MainActivity extends AppCompatActivity {
         if (editTitle.hasFocus()) {
             if (undoTitleList.size() > 1) {
                 isUndoRedoActive = true;
-                undoTitleList.remove(undoTitleList.size() - 1);
+                String removed = undoTitleList.remove(undoTitleList.size() - 1);
+                redoTitleList.add(removed); // redo ke liye save karo
                 editTitle.setText(undoTitleList.get(undoTitleList.size() - 1));
                 editTitle.setSelection(editTitle.getText().length());
                 isUndoRedoActive = false;
@@ -3731,15 +3736,28 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void performRedo() {
-        if (!redoList.isEmpty()) {
-            isUndoRedoActive = true;
-            CharSequence text = redoList.remove(redoList.size() - 1);
-            undoList.add(text);
-            editNoteBody.setText(text);
-            editNoteBody.setSelection(editNoteBody.getText().length());
-            isUndoRedoActive = false;
+        if (editTitle.hasFocus()) {
+            if (!redoTitleList.isEmpty()) {
+                isUndoRedoActive = true;
+                String text = redoTitleList.remove(redoTitleList.size() - 1);
+                undoTitleList.add(text);
+                editTitle.setText(text);
+                editTitle.setSelection(editTitle.getText().length());
+                isUndoRedoActive = false;
+            } else {
+                Toast.makeText(this, "Nothing to redo", Toast.LENGTH_SHORT).show();
+            }
         } else {
-            Toast.makeText(this, "Nothing to redo", Toast.LENGTH_SHORT).show();
+            if (!redoList.isEmpty()) {
+                isUndoRedoActive = true;
+                CharSequence text = redoList.remove(redoList.size() - 1);
+                undoList.add(text);
+                editNoteBody.setText(text);
+                editNoteBody.setSelection(editNoteBody.getText().length());
+                isUndoRedoActive = false;
+            } else {
+                Toast.makeText(this, "Nothing to redo", Toast.LENGTH_SHORT).show();
+            }
         }
     }
 
@@ -3806,30 +3824,48 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setAlarm(long time, boolean isDaily) {
+        AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+        if (am == null) return;
+
+        // Android 12+ (API 31+): SCHEDULE_EXACT_ALARM permission runtime check
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            if (!am.canScheduleExactAlarms()) {
+                // User ko settings mein jaake permission deni hogi
+                new AlertDialog.Builder(this)
+                        .setTitle("Permission Required")
+                        .setMessage("To set alarms, please allow 'Alarms & reminders' permission in Settings.")
+                        .setPositiveButton("Open Settings", (d, w) -> {
+                            Intent settingsIntent = new Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM);
+                            settingsIntent.setData(android.net.Uri.parse("package:" + getPackageName()));
+                            startActivity(settingsIntent);
+                        })
+                        .setNegativeButton("Cancel", null)
+                        .show();
+                return;
+            }
+        }
+
         Intent intent = new Intent(this, ReminderReceiver.class);
         intent.putExtra("title", editTitle.getText().toString());
         intent.putExtra("noteId", currentEditingNoteId); // FIX BUG 6: noteId pass karo taaki notification tap se sahi note khule
         // FIX BUG 1: har note ka unique requestCode — warna saare alarms ek hi PendingIntent share karte hain
         int requestCode = currentEditingNoteId != null ? currentEditingNoteId.hashCode() : 0;
         PendingIntent pi = PendingIntent.getBroadcast(this, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
 
-        if (am != null) {
-            if (isDaily) {
-                // FIX BUG 5: setRepeating Android 6+ par inexact hai — setExactAndAllowWhileIdle use karo
-                // ReminderReceiver mein next day ka alarm re-schedule karna hoga
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                    am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, time, pi);
-                } else {
-                    am.setRepeating(AlarmManager.RTC_WAKEUP, time, AlarmManager.INTERVAL_DAY, pi);
-                }
+        if (isDaily) {
+            // FIX BUG 5: setRepeating Android 6+ par inexact hai — setExactAndAllowWhileIdle use karo
+            // ReminderReceiver mein next day ka alarm re-schedule karna hoga
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, time, pi);
             } else {
-                // One-time alarm
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                    am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, time, pi);
-                } else {
-                    am.set(AlarmManager.RTC_WAKEUP, time, pi);
-                }
+                am.setRepeating(AlarmManager.RTC_WAKEUP, time, AlarmManager.INTERVAL_DAY, pi);
+            }
+        } else {
+            // One-time alarm — exact use karo reliability ke liye
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, time, pi);
+            } else {
+                am.set(AlarmManager.RTC_WAKEUP, time, pi);
             }
         }
 
