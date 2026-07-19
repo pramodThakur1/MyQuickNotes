@@ -1877,9 +1877,9 @@ public class MainActivity extends AppCompatActivity {
                 JSONArray arr = new JSONArray(imagesJson);
                 for (int i = 0; i < arr.length(); i++) {
                     String path = arr.getString(i);
-                    // FIX: content:// URIs are gallery links — invalid after restore
-                    // Only add paths that are actual files existing on disk
-                    if (!path.startsWith("content://") && new java.io.File(path).exists()) {
+                    // content:// URIs same device pe valid hain — allow karo
+                    // Sirf woh file paths skip karo jo disk pe exist nahi karti
+                    if (path.startsWith("content://") || new java.io.File(path).exists()) {
                         currentImagePaths.add(path);
                     }
                 }
