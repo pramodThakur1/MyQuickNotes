@@ -1442,6 +1442,29 @@ public class MainActivity extends AppCompatActivity {
                             saveCategories();
                         }
 
+                        // FIX: Clean up dead image paths after restore
+                        // content:// URIs and missing files hata do — warna black screen aata hai
+                        boolean imagePathsCleaned = false;
+                        for (HashMap<String, String> note : allNotesList) {
+                            String imagesJson = note.get("images");
+                            if (imagesJson == null || imagesJson.isEmpty()) continue;
+                            try {
+                                JSONArray arr = new JSONArray(imagesJson);
+                                JSONArray cleaned = new JSONArray();
+                                for (int i = 0; i < arr.length(); i++) {
+                                    String path = arr.getString(i);
+                                    if (!path.startsWith("content://") && new java.io.File(path).exists()) {
+                                        cleaned.put(path);
+                                    }
+                                }
+                                if (cleaned.length() != arr.length()) {
+                                    note.put("images", cleaned.toString());
+                                    imagePathsCleaned = true;
+                                }
+                            } catch (Exception ignored) {}
+                        }
+                        if (imagePathsCleaned) saveNotesToStorage();
+
                         loadNotesFromStorage();
                         setupCategoriesInDrawer();
                         Toast.makeText(this, "Restore successful!", Toast.LENGTH_SHORT).show();
@@ -1852,7 +1875,14 @@ public class MainActivity extends AppCompatActivity {
             String imagesJson = n.get("images");
             if (imagesJson != null) {
                 JSONArray arr = new JSONArray(imagesJson);
-                for (int i = 0; i < arr.length(); i++) currentImagePaths.add(arr.getString(i));
+                for (int i = 0; i < arr.length(); i++) {
+                    String path = arr.getString(i);
+                    // FIX: content:// URIs are gallery links — invalid after restore
+                    // Only add paths that are actual files existing on disk
+                    if (!path.startsWith("content://") && new java.io.File(path).exists()) {
+                        currentImagePaths.add(path);
+                    }
+                }
             }
         } catch (Exception e) {}
         imagesAdapter.notifyDataSetChanged();
