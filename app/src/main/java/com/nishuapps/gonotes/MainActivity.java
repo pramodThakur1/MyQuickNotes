@@ -242,6 +242,14 @@ public class MainActivity extends AppCompatActivity {
                 if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
                     Uri uri = result.getData().getData();
                     if (uri != null) {
+                        // FIX: Android 13+ Photo Picker temporary URI ko permanent karo
+                        // Bina is ke URI session ke baad expire ho jaata hai → photo gayab
+                        try {
+                            getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        } catch (SecurityException ignored) {
+                            // Kuch URIs persistable nahi hote — background conversion handle kar legi
+                        }
+
                         // 1. Show ORIGINAL Gallery Photo INSTANTLY
                         String originalPath = uri.toString();
                         addImageToCurrentNote(originalPath);
@@ -4202,11 +4210,40 @@ public class MainActivity extends AppCompatActivity {
 
     private void replacePlaceholderWithImage(String tempId, String realPath) {
         mainHandler.post(() -> {
+            // 1. Live UI update (agar note editor abhi bhi khula hai)
             int index = currentImagePaths.indexOf(tempId);
             if (index != -1) {
                 currentImagePaths.set(index, realPath);
                 imagesAdapter.notifyItemChanged(index);
                 Toast.makeText(MainActivity.this, "Image Optimized! ✨", Toast.LENGTH_SHORT).show();
+            }
+
+            // 2. FIX: allNotesList mein bhi update karo aur storage mein save karo
+            // Race condition: user back gaya tha to conversion complete hone se pehle
+            // Ab content:// ki jagah real file path persist ho jaayegi
+            if (currentEditingNoteId != null) {
+                for (HashMap<String, String> note : allNotesList) {
+                    if (currentEditingNoteId.equals(note.get("id"))) {
+                        try {
+                            String imagesJson = note.get("images");
+                            if (imagesJson != null) {
+                                JSONArray arr = new JSONArray(imagesJson);
+                                JSONArray updated = new JSONArray();
+                                boolean changed = false;
+                                for (int i = 0; i < arr.length(); i++) {
+                                    String p = arr.getString(i);
+                                    if (p.equals(tempId)) { updated.put(realPath); changed = true; }
+                                    else updated.put(p);
+                                }
+                                if (changed) {
+                                    note.put("images", updated.toString());
+                                    saveNotesToStorage(); // real path disk pe save karo
+                                }
+                            }
+                        } catch (Exception e) { e.printStackTrace(); }
+                        break;
+                    }
+                }
             }
         });
     }
