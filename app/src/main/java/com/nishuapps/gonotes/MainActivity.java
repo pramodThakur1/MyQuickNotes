@@ -198,7 +198,15 @@ public class MainActivity extends AppCompatActivity {
     private boolean isH2Active = false;
 
     private boolean isCheckboxesHidden = false;
-    private final android.util.LruCache<String, android.graphics.Bitmap> imageCache = new android.util.LruCache<>(30); // Cache for scaled bitmaps
+    // FIX: LruCache ab bytes mein limited hai (max 4MB).
+    // Pehle LruCache(30) = 30 poori Bitmap objects = ~90-150MB RAM bloat.
+    private final android.util.LruCache<String, android.graphics.Bitmap> imageCache =
+            new android.util.LruCache<String, android.graphics.Bitmap>(4 * 1024 * 1024) {
+                @Override
+                protected int sizeOf(String key, android.graphics.Bitmap value) {
+                    return value.getByteCount();
+                }
+            };
 
     private ArrayList<HashMap<String, String>> allNotesList = new ArrayList<>();
     private ArrayList<HashMap<String, String>> displayedNotesList = new ArrayList<>();
@@ -359,6 +367,16 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // FIX: Startup mein stale temp cache files delete karo.
+        // Crash ke baad drive_download.qnb jaise files cache mein permanently reh jaati hain.
+        try {
+            for (String _n : new String[]{"drive_download.qnb", "auto_sync.qnb",
+                    "GoNotesPro_Backup.qnb", "Note_Export.pdf"}) {
+                java.io.File _f = new java.io.File(getCacheDir(), _n);
+                if (_f.exists()) _f.delete();
+            }
+        } catch (Exception _ignored) {}
+
         // SECURE: Create Notification Channel for reminders (F-Notification Fix)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             android.app.NotificationChannel channel = new android.app.NotificationChannel("REMINDERS", "Note Reminders", android.app.NotificationManager.IMPORTANCE_HIGH);
@@ -1139,10 +1157,17 @@ public class MainActivity extends AppCompatActivity {
                     tempFile.setWritable(true, true);
                     // ACCOUNT-DERIVED KEY FIX: Use account ID derived key (cross-device safe)
                     final SecretKey accountKey = getAccountDerivedKey(account.getId());
+                    final java.io.File tempFileRef = tempFile;
                     mainHandler.post(() -> {
                         try {
-                            performImportWithKey(Uri.fromFile(tempFile), accountKey, true);
-                        } catch (Exception e) { e.printStackTrace(); }
+                            performImportWithKey(Uri.fromFile(tempFileRef), accountKey, true);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        } finally {
+                            // FIX: drive_download.qnb restore ke baad delete karo.
+                            // Pehle permanently cache mein rahti thi (~5-10MB bloat per restore).
+                            if (tempFileRef.exists()) tempFileRef.delete();
+                        }
                     });
                 } else {
                     mainHandler.post(() -> Toast.makeText(this, "No existing backup found on cloud.", Toast.LENGTH_LONG).show());

@@ -31,8 +31,12 @@ public class NoteImageGalleryAdapter extends RecyclerView.Adapter<NoteImageGalle
     @Override
     public void onBindViewHolder(@NonNull GalleryViewHolder holder, int position) {
         String path = imagePaths.get(position);
+        // FIX: DiskCacheStrategy.NONE explicitly set kiya hai.
+        // Pehle koi strategy set nahi thi, Glide default AUTOMATIC use karta tha
+        // jisse yeh bhi disk par cache karta tha — extra ~5MB bloat.
         Glide.with(holder.itemView.getContext())
                 .load(path.startsWith("content://") ? Uri.parse(path) : new File(path))
+                .diskCacheStrategy(com.bumptech.glide.load.engine.DiskCacheStrategy.NONE)
                 .into(holder.zoomImageView);
     }
 
