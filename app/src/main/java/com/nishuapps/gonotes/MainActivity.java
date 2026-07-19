@@ -265,7 +265,26 @@ public class MainActivity extends AppCompatActivity {
                         executor.execute(() -> {
                             try {
                                 // 2. Process in background silently
-                                Bitmap bitmap = MediaStore.Images.Media.getBitmap(this.getContentResolver(), uri);
+                                // FIX-C: Pehle full-res load hoti thi (4000px) — ab 1080px cap ke saath load karo
+                                // calculateInSampleSize() function pehle se code mein hai lekin use nahi ho raha tha
+                                android.graphics.BitmapFactory.Options _opts = new android.graphics.BitmapFactory.Options();
+                                _opts.inJustDecodeBounds = true;
+                                // Bounds pehle pado (no memory used)
+                                android.graphics.BitmapFactory.decodeStream(
+                                        getContentResolver().openInputStream(uri), null, _opts);
+                                _opts.inSampleSize = calculateInSampleSize(_opts, 1080, 1080);
+                                _opts.inJustDecodeBounds = false;
+                                Bitmap bitmap = android.graphics.BitmapFactory.decodeStream(
+                                        getContentResolver().openInputStream(uri), null, _opts);
+                                // Agar abhi bhi 1080 se bada hai toh Bitmap.createScaledBitmap se final resize
+                                if (bitmap != null && (bitmap.getWidth() > 1080 || bitmap.getHeight() > 1080)) {
+                                    float _scale = Math.min(1080f / bitmap.getWidth(), 1080f / bitmap.getHeight());
+                                    Bitmap _scaled = Bitmap.createScaledBitmap(bitmap,
+                                            Math.round(bitmap.getWidth() * _scale),
+                                            Math.round(bitmap.getHeight() * _scale), true);
+                                    bitmap.recycle();
+                                    bitmap = _scaled;
+                                }
 
                                 java.io.File imagesDir = new java.io.File(getFilesDir(), "images");
                                 if (!imagesDir.exists()) imagesDir.mkdirs();
@@ -273,9 +292,9 @@ public class MainActivity extends AppCompatActivity {
                                 java.io.File file = new java.io.File(imagesDir, "note_img_" + System.currentTimeMillis() + ".webp");
                                 FileOutputStream fos = new FileOutputStream(file);
                                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                                    bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 75, fos); // Balanced quality
+                                    bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 80, fos); // 80% = sharp + small
                                 } else {
-                                    bitmap.compress(Bitmap.CompressFormat.WEBP, 75, fos);
+                                    bitmap.compress(Bitmap.CompressFormat.WEBP, 80, fos);
                                 }
                                 fos.flush(); fos.close(); bitmap.recycle();
 
@@ -308,18 +327,31 @@ public class MainActivity extends AppCompatActivity {
                         try {
                             java.io.File oldFile = new java.io.File(originalPath);
 
-                            // Scale down in background
+                            // FIX-D: Pehle hardcoded inSampleSize=2 tha — ab 1080px smart cap
+                            // calculateInSampleSize() function already tha code mein, ab use ho raha hai
                             android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options();
-                            options.inSampleSize = 2;
+                            options.inJustDecodeBounds = true;
+                            android.graphics.BitmapFactory.decodeFile(originalPath, options);
+                            options.inSampleSize = calculateInSampleSize(options, 1080, 1080);
+                            options.inJustDecodeBounds = false;
                             Bitmap bitmap = android.graphics.BitmapFactory.decodeFile(originalPath, options);
+                            // Final precise resize agar abhi bhi bada ho
+                            if (bitmap != null && (bitmap.getWidth() > 1080 || bitmap.getHeight() > 1080)) {
+                                float _sc = Math.min(1080f / bitmap.getWidth(), 1080f / bitmap.getHeight());
+                                Bitmap _sb = Bitmap.createScaledBitmap(bitmap,
+                                        Math.round(bitmap.getWidth() * _sc),
+                                        Math.round(bitmap.getHeight() * _sc), true);
+                                bitmap.recycle();
+                                bitmap = _sb;
+                            }
 
                             java.io.File imagesDir = new java.io.File(getFilesDir(), "images");
                             if (!imagesDir.exists()) imagesDir.mkdirs();
 
                             java.io.File webpFile = new java.io.File(imagesDir, "note_cam_" + System.currentTimeMillis() + ".webp");
                             FileOutputStream fos = new FileOutputStream(webpFile);
-                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 75, fos);
-                            else bitmap.compress(Bitmap.CompressFormat.WEBP, 75, fos);
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 80, fos);
+                            else bitmap.compress(Bitmap.CompressFormat.WEBP, 80, fos);
                             fos.flush(); fos.close(); bitmap.recycle();
 
                             // SECURE: Explicitly set private permissions (CWE-276 Fix)
