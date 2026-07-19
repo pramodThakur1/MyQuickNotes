@@ -2888,6 +2888,12 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
 
+                // FIX-A: Glide disk cache clear karo (background thread mein safe hai)
+                // image_manager_disk_cache/ folder (~15-20MB) yahan saaf hota hai
+                try {
+                    com.bumptech.glide.Glide.get(MainActivity.this).clearDiskCache();
+                } catch (Exception _glideEx) { _glideEx.printStackTrace(); }
+
                 // 3. Purge Orphaned Files from BOTH root and subfolders
                 java.io.File[] scanDirs = { getFilesDir(), new java.io.File(getFilesDir(), "images"), getCacheDir(), new java.io.File(getCacheDir(), "exports") };
 
@@ -5054,6 +5060,66 @@ public class MainActivity extends AppCompatActivity {
         }
 
         super.onBackPressed();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // FIX-B: App band hone par background mein auto-cleanup
+        // User ja raha hai — best time for Glide cache + orphan scan
+        if (!executor.isShutdown()) {
+            executor.execute(() -> {
+                try {
+                    // B-1: Glide disk cache clear (main thread pe nahi chal sakta, isliye yahan)
+                    com.bumptech.glide.Glide.get(MainActivity.this).clearDiskCache();
+                } catch (Exception _e) { _e.printStackTrace(); }
+
+                try {
+                    // B-2: Orphan images scan — notes se unlinked photos delete karo
+                    SharedPreferences _sp = getSharedPreferences("MyNotesData", MODE_PRIVATE);
+                    String _secureData = _sp.getString("notes_json_secure", null);
+                    String _json;
+                    if (_secureData != null) {
+                        byte[] _combined = android.util.Base64.decode(_secureData, android.util.Base64.DEFAULT);
+                        byte[] _iv = new byte[IV_LENGTH];
+                        byte[] _enc = new byte[_combined.length - IV_LENGTH];
+                        System.arraycopy(_combined, 0, _iv, 0, IV_LENGTH);
+                        System.arraycopy(_combined, IV_LENGTH, _enc, 0, _enc.length);
+                        javax.crypto.SecretKey _key = getOrCreateKey(MASTER_KEY_ALIAS, true);
+                        javax.crypto.Cipher _c = javax.crypto.Cipher.getInstance(ALGO_GCM);
+                        _c.init(javax.crypto.Cipher.DECRYPT_MODE, _key, new javax.crypto.spec.GCMParameterSpec(TAG_LENGTH, _iv));
+                        _json = new String(_c.doFinal(_enc), java.nio.charset.StandardCharsets.UTF_8);
+                    } else {
+                        _json = _sp.getString("notes_json", "[]");
+                    }
+                    JSONArray _arr = new JSONArray(_json);
+                    HashSet<String> _activeImages = new HashSet<>();
+                    for (int _i = 0; _i < _arr.length(); _i++) {
+                        String _imgJson = _arr.getJSONObject(_i).optString("images", null);
+                        if (_imgJson != null) {
+                            JSONArray _iArr = new JSONArray(_imgJson);
+                            for (int _j = 0; _j < _iArr.length(); _j++) {
+                                String _p = _iArr.getString(_j);
+                                if (!_p.startsWith("content://")) _activeImages.add(new java.io.File(_p).getName());
+                            }
+                        }
+                    }
+                    java.io.File[] _dirs = { getFilesDir(), new java.io.File(getFilesDir(), "images"), getCacheDir() };
+                    for (java.io.File _dir : _dirs) {
+                        if (_dir == null || !_dir.exists() || _dir.listFiles() == null) continue;
+                        for (java.io.File _f : _dir.listFiles()) {
+                            if (_f.isDirectory()) continue;
+                            String _n = _f.getName();
+                            if ((_n.endsWith(".webp") || _n.endsWith(".jpg") || _n.startsWith("note_img_") || _n.startsWith("note_cam_") || _n.startsWith("camera_temp_"))
+                                    && !_activeImages.contains(_n)
+                                    && System.currentTimeMillis() - _f.lastModified() > 30000) {
+                                _f.delete();
+                            }
+                        }
+                    }
+                } catch (Exception _e) { _e.printStackTrace(); }
+            });
+        }
     }
 
     @Override
