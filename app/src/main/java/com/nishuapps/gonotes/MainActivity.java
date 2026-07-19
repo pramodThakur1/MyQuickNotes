@@ -1738,45 +1738,10 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         startupUnlockAttempted = true;
-
-        // Detect if we have biometrics enrolled
-        BiometricManager bm = BiometricManager.from(this);
-        int status = bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL);
-
-        if (status == BiometricManager.BIOMETRIC_SUCCESS) {
-            // MANDATORY STARTUP UNLOCK (Ensures key is released for the session)
-            showStartupBiometricPrompt();
-        } else {
-            // Fallback for devices without biometric (load normally, key will use standard mode)
-            loadNotesFromStorage();
-        }
-    }
-
-    private void showStartupBiometricPrompt() {
-        try {
-            // SECURE UNLOCK: We don't pass CryptoObject here to properly activate the
-            // 30-minute hardware key release window (F-Auth Fix).
-            new BiometricPrompt(this, ContextCompat.getMainExecutor(this), new BiometricPrompt.AuthenticationCallback() {
-                @Override public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult r) {
-                    isVaultUnlocked = true; // Release the guard
-                    loadNotesFromStorage(); // Access granted, load the notes!
-                }
-                @Override public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
-                    super.onAuthenticationError(errorCode, errString);
-                    // If canceled or failed, show empty state to protect data
-                    isVaultUnlocked = false;
-                    Toast.makeText(MainActivity.this, "Vault locked: " + errString, Toast.LENGTH_SHORT).show();
-                    filterNotes("");
-                }
-            }).authenticate(new BiometricPrompt.PromptInfo.Builder()
-                    .setTitle("Unlock Secure Vault")
-                    .setSubtitle("Confirm identity to load your notes")
-                    .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL)
-                    .build());
-        } catch (Exception e) {
-            // Fallback for devices without biometric (PIN/Pattern) or first-time install
-            loadNotesFromStorage();
-        }
+        // Startup lock removed — app directly opens
+        // Individual note lock still works as before
+        isVaultUnlocked = true;
+        loadNotesFromStorage();
     }
 
     private void checkBiometricAndUnlock(HashMap<String, String> n) {
