@@ -145,6 +145,16 @@ public class MainActivity extends AppCompatActivity {
     private View scrollCategories, buttonToggleCategories;
     private boolean isCategoriesExpanded = true;
     private boolean isBinMode = false, isNormalFilterMode = false, isNotebookMode = false, isRecentMode = true;
+    // Previous navigation state — note editor se wapas sahi jagah lautne ke liye
+    private boolean prevIsRecentMode = true;
+    private boolean prevIsNormalFilterMode = false;
+    private boolean prevIsNotebookMode = false;
+    private boolean prevIsBinMode = false;
+    private String prevSelectedCategoryFilter = "All";
+    private String prevCurrentParentId = "root";
+    private int prevCurrentLevel = 1;
+    private ArrayList<String> prevNavigationPathIds = new ArrayList<>();
+    private ArrayList<String> prevNavigationPathNames = new ArrayList<>();
     private String currentParentId = "root";
     private int currentLevel = 1;
     private final ArrayList<String> navigationPathIds = new ArrayList<>();
@@ -1915,6 +1925,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void openNoteContent(HashMap<String, String> n) {
+        saveNavigationState(); // Capture where user came from before entering editor
         // SECURE: Enable privacy screen if the note is locked (C3 Fix)
         if ("true".equals(n.get("isLocked"))) {
             enablePrivacyScreen();
@@ -1998,6 +2009,18 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void saveNavigationState() {
+        prevIsRecentMode = isRecentMode;
+        prevIsNormalFilterMode = isNormalFilterMode;
+        prevIsNotebookMode = isNotebookMode;
+        prevIsBinMode = isBinMode;
+        prevSelectedCategoryFilter = selectedCategoryFilter;
+        prevCurrentParentId = currentParentId;
+        prevCurrentLevel = currentLevel;
+        prevNavigationPathIds = new ArrayList<>(navigationPathIds);
+        prevNavigationPathNames = new ArrayList<>(navigationPathNames);
+    }
+
     private void closeNoteScreen() {
         // HIDE KEYBOARD
         android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
@@ -2019,15 +2042,18 @@ public class MainActivity extends AppCompatActivity {
         screenAddNote.setVisibility(View.GONE);
         screenList.setVisibility(View.VISIBLE);
         if (!isBinMode && !isSelectionMode) buttonPlus.setVisibility(View.VISIBLE);
-        // FIX BUG 1: Note editor se wapas aane par hamesha Recent tab reset karo
-        // Warna selectedCategoryFilter ya isNormalFilterMode active rehta hai
-        // aur filterNotes sirf filtered notes dikhata hai, baki categories ke notes hide ho jaate hain
-        isRecentMode = true;
-        isNormalFilterMode = false;
-        isNotebookMode = false;
-        isBinMode = false;
-        selectedCategoryFilter = "All";
+        // RESTORE: Jahan se note khola tha, wapas wahi jaao (parent location)
+        isRecentMode = prevIsRecentMode;
+        isNormalFilterMode = prevIsNormalFilterMode;
+        isNotebookMode = prevIsNotebookMode;
+        isBinMode = prevIsBinMode;
+        selectedCategoryFilter = prevSelectedCategoryFilter;
+        currentParentId = prevCurrentParentId;
+        currentLevel = prevCurrentLevel;
+        navigationPathIds.clear(); navigationPathIds.addAll(prevNavigationPathIds);
+        navigationPathNames.clear(); navigationPathNames.addAll(prevNavigationPathNames);
         updateFilterTabsUI();
+        if (isNotebookMode) updateBreadcrumbText();
         filterNotes("");
     }
 
@@ -3374,6 +3400,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void createNewNote(String type) {
+        saveNavigationState(); // Capture where user came from before entering editor
         currentEditingNoteId = null;
         editTitle.setText("");
         currentNoteCategory = "General";
@@ -5173,6 +5200,7 @@ public class MainActivity extends AppCompatActivity {
                                         allNotesList.add(0, folder);
                                     } else {
                                         // Create Note (Open Editor)
+                                        saveNavigationState(); // Capture where user came from
                                         currentEditingNoteId = null;
                                         editTitle.setText(name);
                                         editNoteBody.setText("");
