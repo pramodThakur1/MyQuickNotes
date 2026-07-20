@@ -2203,7 +2203,15 @@ public class MainActivity extends AppCompatActivity {
                 if ("true".equals(n.get("isTrashed")) || "true".equals(n.get("isFolder")) || "true".equals(n.get("isDummy"))) continue;
                 recentList.add(n);
             }
-            java.util.Collections.sort(recentList, (n1, n2) -> compareDates(n1.get("timestamp"), n2.get("timestamp"), true));
+            java.util.Collections.sort(recentList, (n1, n2) -> {
+                // FIX: modified_at (millisecond precision) use karo taaki same-minute notes ka order stable rahe
+                String _m1 = n1.get("modified_at");
+                String _m2 = n2.get("modified_at");
+                if (_m1 != null && _m2 != null) {
+                    try { return Long.compare(Long.parseLong(_m2), Long.parseLong(_m1)); } catch (Exception ignored) {}
+                }
+                return compareDates(n1.get("timestamp"), n2.get("timestamp"), true); // fallback for old notes
+            });
             for (HashMap<String, String> n : recentList) {
                 String title = n.get("title") != null ? n.get("title").toLowerCase() : "";
                 String body = n.get("fullBody") != null ? n.get("fullBody").toLowerCase() : "";
