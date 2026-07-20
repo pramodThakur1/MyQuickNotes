@@ -5053,7 +5053,9 @@ public class MainActivity extends AppCompatActivity {
             // SET NOTE PREVIEW (SNIPPET)
             String body = note.get("fullBody");
             String imagesJson = note.get("images");
-            boolean hasImages = imagesJson != null && imagesJson.contains(".webp");
+            // FIX: Encrypted paths mein ".webp" nahi hota (e.g. "ENC:xyz..."),
+            // isliye array empty hai ya nahi ye check karo — ".webp" nahi
+            boolean hasImages = imagesJson != null && !imagesJson.isEmpty() && !imagesJson.equals("[]");
 
             if (tSnippet != null && body != null) {
                 String prefix = hasImages ? "🖼️ " : "";
