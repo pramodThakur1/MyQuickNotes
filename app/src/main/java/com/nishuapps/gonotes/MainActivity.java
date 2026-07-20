@@ -302,10 +302,6 @@ public class MainActivity extends AppCompatActivity {
                                 file.setReadable(true, true);
                                 file.setWritable(true, true);
 
-                                // SECURE: Store path as encrypted metadata (Finding H-003 Fix)
-                                // SECURE: Use Metadata Key (Fast) for image paths
-                                String encryptedPath = secureEncrypt(file.getAbsolutePath(), false);
-
                                 // 3. Swap with optimized path later
                                 replacePlaceholderWithImage(originalPath, file.getAbsolutePath());
                             } catch (Exception e) { e.printStackTrace(); }
@@ -1050,6 +1046,21 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
+    // IMAGE PATH ENCRYPTION HELPERS
+    // Sirf internal file paths encrypt hoti hain (content:// URIs nahi)
+    // Prefix "ENC:" se pata chalta hai path encrypted hai ya plain (backward compat)
+    private String encryptImagePath(String path) {
+        if (path == null || path.startsWith("content://") || path.startsWith("ENC:")) return path;
+        String enc = secureEncrypt(path, false);
+        return enc != null ? "ENC:" + enc : path; // fallback: plain rakho agar encrypt fail
+    }
+
+    private String decryptImagePath(String path) {
+        if (path == null || !path.startsWith("ENC:")) return path; // plain path ya content://
+        String dec = secureDecrypt(path.substring(4), false);
+        return dec; // null if decrypt fails — caller null check karega
+    }
+
     private void completeLogin(GoogleSignInAccount account) {
         initializeDriveService(account);
         updateUserInfo(account);
@@ -1518,9 +1529,14 @@ public class MainActivity extends AppCompatActivity {
                                 JSONArray cleaned = new JSONArray();
                                 for (int i = 0; i < arr.length(); i++) {
                                     String path = arr.getString(i);
-                                    if (!path.startsWith("content://") && new java.io.File(path).exists()) {
-                                        cleaned.put(path);
+                                    String plainPath = decryptImagePath(path); // decrypt for file check
+                                    if (plainPath == null) continue;
+                                    if (plainPath.startsWith("content://")) {
+                                        cleaned.put(path); // content:// as-is rakho
+                                    } else if (new java.io.File(plainPath).exists()) {
+                                        cleaned.put(path); // encrypted version wapas rakho (plain nahi)
                                     }
+                                    // file exist nahi karti — cleaned mein mat daalo (remove)
                                 }
                                 if (cleaned.length() != arr.length()) {
                                     note.put("images", cleaned.toString());
@@ -1907,10 +1923,13 @@ public class MainActivity extends AppCompatActivity {
                 JSONArray arr = new JSONArray(imagesJson);
                 for (int i = 0; i < arr.length(); i++) {
                     String path = arr.getString(i);
+                    // IMAGE PATH DECRYPTION: ENC: prefix = encrypted path, baaki plain/content://
+                    String plainPath = decryptImagePath(path);
+                    if (plainPath == null) continue; // decrypt fail — skip
                     // content:// URIs same device pe valid hain — allow karo
                     // Sirf woh file paths skip karo jo disk pe exist nahi karti
-                    if (path.startsWith("content://") || new java.io.File(path).exists()) {
-                        currentImagePaths.add(path);
+                    if (plainPath.startsWith("content://") || new java.io.File(plainPath).exists()) {
+                        currentImagePaths.add(plainPath);
                     }
                 }
             }
@@ -2042,7 +2061,11 @@ public class MainActivity extends AppCompatActivity {
             n.put("isLocked", String.valueOf(isCurrentNoteLocked));
             n.put("pin", currentNotePin);
             n.put("color", currentNoteColor);
-            n.put("images", new JSONArray(currentImagePaths).toString());
+            // IMAGE PATH ENCRYPTION: currentImagePaths plain hain memory mein,
+            // JSON mein encrypt karke store karo
+            JSONArray _encImgs = new JSONArray();
+            for (String _imgP : currentImagePaths) { _encImgs.put(encryptImagePath(_imgP)); }
+            n.put("images", _encImgs.toString());
             // FIX: storageMode yahan "plain" mat set karo.
             // saveNotesToStorage() encryption succeed hone par applyStorageModeToAllNotes("encrypted")
             // call karega. Agar yahan "plain" force karein toh existing encrypted notes
@@ -2914,7 +2937,9 @@ public class MainActivity extends AppCompatActivity {
                             JSONArray iArr = new JSONArray(imagesJson);
                             for (int i = 0; i < iArr.length(); i++) {
                                 String path = iArr.getString(i);
-                                if (!path.startsWith("content://")) activeImageNames.add(new java.io.File(path).getName());
+                                String plainPath = decryptImagePath(path); // ENC: prefix hata ke plain lo
+                                if (plainPath != null && !plainPath.startsWith("content://"))
+                                    activeImageNames.add(new java.io.File(plainPath).getName());
                             }
                         } catch (Exception ignored) {}
                     }
@@ -4260,8 +4285,14 @@ public class MainActivity extends AppCompatActivity {
                                 boolean changed = false;
                                 for (int i = 0; i < arr.length(); i++) {
                                     String p = arr.getString(i);
-                                    if (p.equals(tempId)) { updated.put(realPath); changed = true; }
-                                    else updated.put(p);
+                                    // Decrypt karo compare ke liye (JSON mein encrypted ho sakta hai)
+                                    String plainP = decryptImagePath(p);
+                                    if (tempId.equals(p) || tempId.equals(plainP)) {
+                                        updated.put(encryptImagePath(realPath)); // naya path encrypt karke store
+                                        changed = true;
+                                    } else {
+                                        updated.put(p); // pehle se encrypted — as-is rakho
+                                    }
                                 }
                                 if (changed) {
                                     note.put("images", updated.toString());
@@ -5132,7 +5163,9 @@ public class MainActivity extends AppCompatActivity {
                             JSONArray _iArr = new JSONArray(_imgJson);
                             for (int _j = 0; _j < _iArr.length(); _j++) {
                                 String _p = _iArr.getString(_j);
-                                if (!_p.startsWith("content://")) _activeImages.add(new java.io.File(_p).getName());
+                                String _dp = decryptImagePath(_p); // ENC: prefix hata ke plain lo
+                                if (_dp != null && !_dp.startsWith("content://"))
+                                    _activeImages.add(new java.io.File(_dp).getName());
                             }
                         }
                     }
