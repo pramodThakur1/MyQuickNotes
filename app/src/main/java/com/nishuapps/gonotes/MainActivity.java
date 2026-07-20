@@ -261,6 +261,8 @@ public class MainActivity extends AppCompatActivity {
                         // 1. Show ORIGINAL Gallery Photo INSTANTLY
                         String originalPath = uri.toString();
                         addImageToCurrentNote(originalPath);
+                        // RACE CONDITION FIX: noteId capture karo executor se pehle (main thread pe)
+                        final String _galleryNoteId = currentEditingNoteId;
 
                         executor.execute(() -> {
                             try {
@@ -302,7 +304,14 @@ public class MainActivity extends AppCompatActivity {
                                 file.setReadable(true, true);
                                 file.setWritable(true, true);
 
-                                // 3. Swap with optimized path later
+                                // RACE CONDITION FIX: Background thread se SEEDHA SharedPreferences update karo.
+                                // Pehle sirf mainHandler.post() pe rely karte the — agar app kill ho jaata tha
+                                // compression ke baad aur UI update se pehle, JSON mein 'content://' URI rehta tha.
+                                // Agle onStop() mein orphan scan webp file ko 'activeImages' mein nahi paata
+                                // aur 30s se zyada purani file DELETE kar deta tha. Isliye photos "gayab" hoti thi.
+                                updateImagePathInStorage(_galleryNoteId, originalPath, file.getAbsolutePath());
+
+                                // 3. UI update (mainHandler — may not run if app killed, but storage is already safe above)
                                 replacePlaceholderWithImage(originalPath, file.getAbsolutePath());
                             } catch (Exception e) { e.printStackTrace(); }
                         });
@@ -318,6 +327,8 @@ public class MainActivity extends AppCompatActivity {
                     // 1. Show ORIGINAL Camera Photo INSTANTLY
                     String originalPath = pendingCameraPhotoPath;
                     addImageToCurrentNote(originalPath);
+                    // RACE CONDITION FIX: noteId capture karo executor se pehle
+                    final String _cameraNoteId = currentEditingNoteId;
 
                     executor.execute(() -> {
                         try {
@@ -354,10 +365,16 @@ public class MainActivity extends AppCompatActivity {
                             webpFile.setReadable(true, true);
                             webpFile.setWritable(true, true);
 
+                            // RACE CONDITION FIX: SharedPreferences seedha update karo background se.
+                            // Pehle: JSON mein camera_temp_xxx.jpg rehta tha (via mainHandler.post() deferred).
+                            // onStop orphan scan: camera_temp.jpg delete ho chuka tha (oldFile.delete), webp
+                            // bhi activeImages mein nahi tha → dono DELETE. Isliye photos black/gayab hoti thi.
+                            updateImagePathInStorage(_cameraNoteId, originalPath, webpFile.getAbsolutePath());
+
                             // Delete the heavy original (keeps storage clean)
                             oldFile.delete();
 
-                            // 2. Swap with optimized path
+                            // 2. UI update
                             replacePlaceholderWithImage(originalPath, webpFile.getAbsolutePath());
                             pendingCameraPhotoPath = null;
                             getSharedPreferences("MyNotesData", MODE_PRIVATE).edit().remove("pendingCameraPhotoPath").apply(); // CLEANUP
@@ -1532,7 +1549,12 @@ public class MainActivity extends AppCompatActivity {
                                     String plainPath = decryptImagePath(path); // decrypt for file check
                                     if (plainPath == null) continue;
                                     if (plainPath.startsWith("content://")) {
-                                        cleaned.put(path); // content:// as-is rakho
+                                        // RESTORE FIX: content:// URIs restore ke baad REMOVE karo.
+                                        // Ye URIs device-session-specific hain — backup zip mein in ka image nahi hota.
+                                        // Rakhne se note mein kala/blank image dikh ta hai permanently.
+                                        // (Note: Bug 1 fix (updateImagePathInStorage) ke baad naye backups mein
+                                        //  content:// URIs JSON mein hogi hi nahi — sirf legacy backups ke liye.)
+                                        // cleaned mein add mat karo → effectively remove ho jaayega
                                     } else if (new java.io.File(plainPath).exists()) {
                                         cleaned.put(path); // encrypted version wapas rakho (plain nahi)
                                     }
@@ -2480,6 +2502,89 @@ public class MainActivity extends AppCompatActivity {
         } catch (Exception e) {
             android.util.Log.e("NoteStorage", "saveNotesToStorage failed: " + e.getMessage(), e);
             // Toast hataya - typing ke waqt bar bar popup nahi aayega
+        }
+    }
+
+    /**
+     * RACE CONDITION FIX — Background thread se seedha SharedPreferences mein image path update karo.
+     *
+     * Problem jo solve karta hai:
+     *   Gallery/Camera photo add hone ke baad async compression hoti hai.
+     *   Compress ke baad replacePlaceholderWithImage() → mainHandler.post() pe JSON update hota tha.
+     *   Agar user app jaldi band kare ya OS app kill kare, mainHandler.post() kabhi nahi chalta.
+     *   JSON mein purana 'content://' ya 'camera_temp_xxx.jpg' rehta hai.
+     *   Agli baar onStop() orphan scan chalta hai → webp file activeImages mein nahi milti → DELETE.
+     *   Yeh method directly SharedPreferences update karta hai (commit()) — koi main thread zaroorat nahi.
+     *
+     * Thread safety: SharedPreferences.commit() thread-safe hai.
+     */
+    private void updateImagePathInStorage(String noteId, String oldPath, String newPath) {
+        if (noteId == null || oldPath == null || newPath == null) return;
+        try {
+            SharedPreferences sp = getSharedPreferences("MyNotesData", MODE_PRIVATE);
+            String secureData = sp.getString("notes_json_secure", null);
+            String json;
+            if (secureData != null) {
+                // Decrypt existing JSON (same logic as onStop orphan scan)
+                byte[] combined = android.util.Base64.decode(secureData, android.util.Base64.DEFAULT);
+                byte[] iv = new byte[IV_LENGTH];
+                byte[] enc = new byte[combined.length - IV_LENGTH];
+                System.arraycopy(combined, 0, iv, 0, IV_LENGTH);
+                System.arraycopy(combined, IV_LENGTH, enc, 0, enc.length);
+                javax.crypto.SecretKey key = getOrCreateKey(MASTER_KEY_ALIAS, true);
+                javax.crypto.Cipher c = javax.crypto.Cipher.getInstance(ALGO_GCM);
+                c.init(javax.crypto.Cipher.DECRYPT_MODE, key, new javax.crypto.spec.GCMParameterSpec(TAG_LENGTH, iv));
+                json = new String(c.doFinal(enc), java.nio.charset.StandardCharsets.UTF_8);
+            } else {
+                json = sp.getString("notes_json", null);
+                if (json == null) return;
+            }
+
+            JSONArray arr = new JSONArray(json);
+            boolean changed = false;
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject noteObj = arr.getJSONObject(i);
+                if (!noteId.equals(noteObj.optString("id"))) continue;
+                String imagesJson = noteObj.optString("images", null);
+                if (imagesJson == null || imagesJson.isEmpty()) break;
+                JSONArray imgs = new JSONArray(imagesJson);
+                JSONArray updated = new JSONArray();
+                for (int j = 0; j < imgs.length(); j++) {
+                    String p = imgs.getString(j);
+                    String plain = decryptImagePath(p);
+                    if (oldPath.equals(p) || oldPath.equals(plain)) {
+                        updated.put(encryptImagePath(newPath)); // naya webp path encrypt karke store
+                        changed = true;
+                    } else {
+                        updated.put(p); // baaki paths as-is
+                    }
+                }
+                if (changed) {
+                    noteObj.put("images", updated.toString());
+                    arr.put(i, noteObj);
+                }
+                break;
+            }
+
+            if (!changed) {
+                android.util.Log.d("NoteStorage", "updateImagePathInStorage: note " + noteId + " — path not found, skip");
+                return;
+            }
+
+            // Re-encrypt aur commit() se save karo (apply() nahi — synchronous write chahiye)
+            String newJson = arr.toString();
+            String newSecure = secureEncrypt(newJson, true);
+            SharedPreferences.Editor editor = sp.edit();
+            if (newSecure != null) {
+                editor.putString("notes_json_secure", newSecure).remove("notes_json").commit();
+            } else {
+                // Encryption fail — plain fallback mein save karo
+                editor.putString("notes_json", newJson).remove("notes_json_secure").commit();
+            }
+            android.util.Log.d("NoteStorage", "updateImagePathInStorage: ✓ note " + noteId
+                    + " → " + new java.io.File(newPath).getName());
+        } catch (Exception e) {
+            android.util.Log.e("NoteStorage", "updateImagePathInStorage failed: " + e.getMessage(), e);
         }
     }
 
