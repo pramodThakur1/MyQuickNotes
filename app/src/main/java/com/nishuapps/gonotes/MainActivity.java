@@ -2014,6 +2014,10 @@ public class MainActivity extends AppCompatActivity {
         prevIsNormalFilterMode = isNormalFilterMode;
         prevIsNotebookMode = isNotebookMode;
         prevIsBinMode = isBinMode;
+        // Safety: agar koi bhi mode active nahi hai (e.g. exitBinMode ke baad) toh Recent default karo
+        if (!prevIsRecentMode && !prevIsNormalFilterMode && !prevIsNotebookMode && !prevIsBinMode) {
+            prevIsRecentMode = true;
+        }
         prevSelectedCategoryFilter = selectedCategoryFilter;
         prevCurrentParentId = currentParentId;
         prevCurrentLevel = currentLevel;
@@ -2270,6 +2274,8 @@ public class MainActivity extends AppCompatActivity {
                     String noteCat = n.get("category");
                     if (noteCat == null) noteCat = "General";
                     if (!noteCat.equals(selectedCategoryFilter)) continue;
+                    // Notes tab mein category filter active ho tab bhi notebook notes exclude karo
+                    if (isNormalFilterMode && !"root".equals(parent)) continue;
                 } else {
                     // In "All" mode, only show root-level items in Normal Notes tab
                     if (isNormalFilterMode && !"root".equals(parent) && query.isEmpty()) continue;
