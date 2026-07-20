@@ -312,7 +312,7 @@ public class MainActivity extends AppCompatActivity {
                                 updateImagePathInStorage(_galleryNoteId, originalPath, file.getAbsolutePath());
 
                                 // 3. UI update (mainHandler — may not run if app killed, but storage is already safe above)
-                                replacePlaceholderWithImage(originalPath, file.getAbsolutePath());
+                                replacePlaceholderWithImage(_galleryNoteId, originalPath, file.getAbsolutePath());
                             } catch (Exception e) { e.printStackTrace(); }
                         });
                     }
@@ -375,7 +375,7 @@ public class MainActivity extends AppCompatActivity {
                             oldFile.delete();
 
                             // 2. UI update
-                            replacePlaceholderWithImage(originalPath, webpFile.getAbsolutePath());
+                            replacePlaceholderWithImage(_cameraNoteId, originalPath, webpFile.getAbsolutePath());
                             pendingCameraPhotoPath = null;
                             getSharedPreferences("MyNotesData", MODE_PRIVATE).edit().remove("pendingCameraPhotoPath").apply(); // CLEANUP
                         } catch (Exception e) { e.printStackTrace(); }
@@ -4366,7 +4366,7 @@ public class MainActivity extends AppCompatActivity {
         pendingCameraPhotoPath = null;
     }
 
-    private void replacePlaceholderWithImage(String tempId, String realPath) {
+    private void replacePlaceholderWithImage(String noteId, String tempId, String realPath) {
         mainHandler.post(() -> {
             // 1. Live UI update (agar note editor abhi bhi khula hai)
             int index = currentImagePaths.indexOf(tempId);
@@ -4379,9 +4379,9 @@ public class MainActivity extends AppCompatActivity {
             // 2. FIX: allNotesList mein bhi update karo aur storage mein save karo
             // Race condition: user back gaya tha to conversion complete hone se pehle
             // Ab content:// ki jagah real file path persist ho jaayegi
-            if (currentEditingNoteId != null) {
+            if (noteId != null) {
                 for (HashMap<String, String> note : allNotesList) {
-                    if (currentEditingNoteId.equals(note.get("id"))) {
+                    if (noteId.equals(note.get("id"))) {
                         try {
                             String imagesJson = note.get("images");
                             if (imagesJson != null) {
