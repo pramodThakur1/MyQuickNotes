@@ -3889,23 +3889,44 @@ public class MainActivity extends AppCompatActivity {
             paint.setTextSize(12);
             paint.setFakeBoldText(false);
 
+            // DRAW NOTE BODY TEXT
             String content = editNoteBody.getText().toString();
             String[] lines = content.split("\n");
-            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\\[\\[IMG:(.*?)\\]\\]");
 
             for (String line : lines) {
-                java.util.regex.Matcher matcher = pattern.matcher(line);
-                if (matcher.find()) {
-                    // DRAW IMAGE
-                    String path = matcher.group(1);
+                if (line.isEmpty()) {
+                    y += 15;
+                } else {
+                    // Basic wrap logic
+                    int charsPerLine = 85;
+                    for (int i = 0; i < line.length(); i += charsPerLine) {
+                        if (y > pageHeight - margin) {
+                            document.finishPage(page);
+                            page = document.startPage(new android.graphics.pdf.PdfDocument.PageInfo.Builder(pageWidth, pageHeight, document.getPages().size() + 1).create());
+                            canvas = page.getCanvas();
+                            y = margin;
+                        }
+                        String sub = line.substring(i, Math.min(i + charsPerLine, line.length()));
+                        canvas.drawText(sub, x, y, paint);
+                        y += 15;
+                    }
+                }
+            }
+
+            // FIX: Images note body mein [[IMG:...]] format mein nahi hoti —
+            // woh currentImagePaths list mein hoti hain (plain paths, already decrypted).
+            // Text ke baad saari images draw karo.
+            if (!currentImagePaths.isEmpty()) {
+                y += 20; // Text aur images ke beech gap
+                for (String imgPath : currentImagePaths) {
                     try {
-                        android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeFile(path);
+                        android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeFile(imgPath);
                         if (bitmap != null) {
                             float ratio = (float) bitmap.getHeight() / bitmap.getWidth();
                             int drawWidth = Math.min(contentWidth, bitmap.getWidth());
                             int drawHeight = (int) (drawWidth * ratio);
 
-                            // Start new page if image doesn't fit
+                            // Naya page agar image fit nahi hoti
                             if (y + drawHeight > pageHeight - margin) {
                                 document.finishPage(page);
                                 page = document.startPage(new android.graphics.pdf.PdfDocument.PageInfo.Builder(pageWidth, pageHeight, document.getPages().size() + 1).create());
@@ -3919,31 +3940,16 @@ public class MainActivity extends AppCompatActivity {
                             bitmap.recycle();
                         }
                     } catch (Exception e) { e.printStackTrace(); }
-                } else {
-                    // DRAW TEXT with simple wrapping
-                    if (line.isEmpty()) {
-                        y += 15;
-                    } else {
-                        // Basic wrap logic
-                        int charsPerLine = 85;
-                        for (int i = 0; i < line.length(); i += charsPerLine) {
-                            if (y > pageHeight - margin) {
-                                document.finishPage(page);
-                                page = document.startPage(new android.graphics.pdf.PdfDocument.PageInfo.Builder(pageWidth, pageHeight, document.getPages().size() + 1).create());
-                                canvas = page.getCanvas();
-                                y = margin;
-                            }
-                            String sub = line.substring(i, Math.min(i + charsPerLine, line.length()));
-                            canvas.drawText(sub, x, y, paint);
-                            y += 15;
-                        }
-                    }
                 }
             }
 
             document.finishPage(page);
 
-            java.io.File file = new java.io.File(getCacheDir(), "Note_Export.pdf");
+            // FIX: FileProvider sirf cache/exports/ allow karta hai (file_paths.xml),
+            // isliye root cache mein nahi, exports/ subfolder mein save karo
+            java.io.File exportsDir = new java.io.File(getCacheDir(), "exports");
+            if (!exportsDir.exists()) exportsDir.mkdirs();
+            java.io.File file = new java.io.File(exportsDir, "Note_Export.pdf");
             document.writeTo(new FileOutputStream(file));
             document.close();
             // SECURE: Explicitly set private permissions (CWE-276 Fix)
