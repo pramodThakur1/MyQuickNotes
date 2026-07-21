@@ -1369,6 +1369,25 @@ public class MainActivity extends AppCompatActivity {
             catsArray = new JSONArray(new String(cC.doFinal(encC), java.nio.charset.StandardCharsets.UTF_8));
         }
 
+        // FIX A: Backup mein image paths plain save karo (device key se independent)
+        // Taaki restore ke waqt different device key se decrypt fail na ho
+        for (int ni = 0; ni < notesArray.length(); ni++) {
+            try {
+                JSONObject note = notesArray.getJSONObject(ni);
+                String imgsJson = note.optString("images", "");
+                if (!imgsJson.isEmpty() && !imgsJson.equals("[]") && !imgsJson.equals("null")) {
+                    JSONArray imgArr = new JSONArray(imgsJson);
+                    JSONArray plainArr = new JSONArray();
+                    for (int ii = 0; ii < imgArr.length(); ii++) {
+                        String p = imgArr.getString(ii);
+                        String plain = decryptImagePath(p); // ENC:xxx -> plain path
+                        plainArr.put(plain != null ? plain : p); // null pe fallback: as-is
+                    }
+                    note.put("images", plainArr.toString());
+                }
+            } catch (Exception ignored) {}
+        }
+
         obj.put("notes", notesArray);
         obj.put("categories", catsArray);
         obj.put("categories_modified_at", sp.getLong("categories_modified_at", 0));
@@ -1566,7 +1585,7 @@ public class MainActivity extends AppCompatActivity {
                                         //  content:// URIs JSON mein hogi hi nahi — sirf legacy backups ke liye.)
                                         // cleaned mein add mat karo → effectively remove ho jaayega
                                     } else if (new java.io.File(plainPath).exists()) {
-                                        cleaned.put(path); // encrypted version wapas rakho (plain nahi)
+                                        cleaned.put(encryptImagePath(plainPath)); // FIX A Tarika 2: nayi device key se re-encrypt
                                     }
                                     // file exist nahi karti — cleaned mein mat daalo (remove)
                                 }
