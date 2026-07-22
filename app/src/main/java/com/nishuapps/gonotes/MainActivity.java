@@ -3630,13 +3630,13 @@ public class MainActivity extends AppCompatActivity {
             if (alarmActive) {
                 new AlertDialog.Builder(this)
                         .setTitle("Alarm Already Set")
-                        .setMessage("Is note par alarm pehle se set hai. Kya karna hai?")
-                        .setPositiveButton("Naya Alarm Set Karo", (d, w) -> showAlarmDialog())
-                        .setNeutralButton("Alarm Cancel Karo", (d, w) -> {
+                        .setMessage("An alarm is already set for this note. What would you like to do?")
+                        .setPositiveButton("Set New Alarm", (d, w) -> showAlarmDialog())
+                        .setNeutralButton("Cancel Alarm", (d, w) -> {
                             cancelAlarm(currentEditingNoteId);
-                            Toast.makeText(this, "Alarm cancel ho gaya", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(this, "Alarm cancelled", Toast.LENGTH_SHORT).show();
                         })
-                        .setNegativeButton("Rehne Do", null)
+                        .setNegativeButton("Keep It", null)
                         .show();
             } else {
                 showAlarmDialog();
@@ -4258,8 +4258,8 @@ public class MainActivity extends AppCompatActivity {
                 pendingAlarmIsDaily = isDaily;
                 new AlertDialog.Builder(this)
                         .setTitle("Permission Required")
-                        .setMessage("Alarm set karne ke liye Settings mein 'Alarms & reminders' allow karein.")
-                        .setPositiveButton("Settings Kholein", (d, w) -> {
+                        .setMessage("Please allow 'Alarms & reminders' in Settings to set alarms.")
+                        .setPositiveButton("Open Settings", (d, w) -> {
                             Intent settingsIntent = new Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM);
                             settingsIntent.setData(android.net.Uri.parse("package:" + getPackageName()));
                             startActivity(settingsIntent);
