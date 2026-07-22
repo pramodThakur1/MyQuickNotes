@@ -201,6 +201,9 @@ public class MainActivity extends AppCompatActivity {
     private long pendingAlarmTime = -1;
     private boolean pendingAlarmIsDaily = false;
 
+    // BugFix-Notif-Tap: Notification se aaya noteId — notes load hone ke baad open hoga
+    private String pendingOpenNoteId = null;
+
     private ArrayList<String> categoriesList = new ArrayList<>();
     private String selectedCategoryFilter = "All";
     private String currentNoteCategory = "General";
@@ -446,6 +449,22 @@ public class MainActivity extends AppCompatActivity {
             channel.enableVibration(true);
             android.app.NotificationManager nm = getSystemService(android.app.NotificationManager.class);
             if (nm != null) nm.createNotificationChannel(channel);
+
+            // BugFix-Notif-Sound: Naya channel V2 sound ke saath banao — Android OS purane
+            // channel ki settings update nahi karne deta, isliye naya channel ID zaroori hai.
+            android.app.NotificationChannel channelV2 = new android.app.NotificationChannel(
+                    "REMINDERS_V2", "Note Reminders", android.app.NotificationManager.IMPORTANCE_HIGH);
+            channelV2.setDescription("Reminders for your secure notes");
+            channelV2.setLockscreenVisibility(android.app.Notification.VISIBILITY_PRIVATE);
+            channelV2.enableVibration(true);
+            android.net.Uri soundUri = android.media.RingtoneManager.getDefaultUri(
+                    android.media.RingtoneManager.TYPE_NOTIFICATION);
+            channelV2.setSound(soundUri,
+                    new android.media.AudioAttributes.Builder()
+                            .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build());
+            if (nm != null) nm.createNotificationChannel(channelV2);
         }
 
         // Android 13+ par POST_NOTIFICATIONS runtime permission request
@@ -1872,6 +1891,8 @@ public class MainActivity extends AppCompatActivity {
         // Individual note lock still works as before
         isVaultUnlocked = true;
         loadNotesFromStorage();
+        // BugFix-Notif-Tap: Notes load hone ke baad pending notification note open karo
+        openPendingNoteIfAny();
     }
 
     private void checkBiometricAndUnlock(HashMap<String, String> n) {
@@ -4280,10 +4301,20 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
             // BugFix-6: Alarm data unencrypted registry mein bhi save karo — BootReceiver ke liye
-            getSharedPreferences("MyNotesAlarms", MODE_PRIVATE).edit()
+            // BugFix-Notif-Title: Note title bhi save karo — ReminderReceiver notification mein dikhayega
+            SharedPreferences.Editor alarmEditor = getSharedPreferences("MyNotesAlarms", MODE_PRIVATE).edit()
                     .putLong("alarm_" + currentEditingNoteId, time)
-                    .putBoolean("daily_" + currentEditingNoteId, isDaily)
-                    .apply();
+                    .putBoolean("daily_" + currentEditingNoteId, isDaily);
+            for (HashMap<String, String> n : allNotesList) {
+                if (currentEditingNoteId.equals(n.get("id"))) {
+                    String noteTitle = n.get("title");
+                    if (noteTitle != null && !noteTitle.isEmpty()) {
+                        alarmEditor.putString("title_" + currentEditingNoteId, noteTitle);
+                    }
+                    break;
+                }
+            }
+            alarmEditor.apply();
         }
 
         pendingAlarmTime = -1; // pending clear karo agar retry se aaya tha
@@ -4313,9 +4344,11 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         // BugFix-6: Alarm registry se bhi hata dena — BootReceiver galat alarm na schedule kare
+        // BugFix-Notif-Title: title_ key bhi remove karo
         getSharedPreferences("MyNotesAlarms", MODE_PRIVATE).edit()
                 .remove("alarm_" + noteId)
                 .remove("daily_" + noteId)
+                .remove("title_" + noteId)
                 .apply();
     }
 
@@ -4456,6 +4489,27 @@ public class MainActivity extends AppCompatActivity {
             // BugFix-10: Stable notification ID — cast overflow nahi, aur har note ka alag ID
             int notifId = (noteId != null) ? Math.abs(noteId.hashCode()) : 0;
 
+            // BugFix-Notif-Title: Saved note title padho — agar nahi mila toh fallback text use karo
+            android.content.SharedPreferences alarmSpRead =
+                    context.getSharedPreferences("MyNotesAlarms", android.content.Context.MODE_PRIVATE);
+            String savedTitle = (noteId != null) ? alarmSpRead.getString("title_" + noteId, null) : null;
+            String notifTitle = "\u23F0 GoNotes Reminder"; // ⏰
+            String notifText = (savedTitle != null && !savedTitle.isEmpty())
+                    ? savedTitle
+                    : "Aapka ek reminder trigger hua hai.";
+
+            // BugFix-Notif-Tap: Notification tap karne par MainActivity open ho
+            android.content.Intent openIntent = new android.content.Intent(context, MainActivity.class);
+            openIntent.setFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                    | android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    | android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            if (noteId != null) openIntent.putExtra("open_note_id", noteId);
+            int tapRequestCode = (noteId != null) ? Math.abs(noteId.hashCode()) + 1000 : 1000;
+            android.app.PendingIntent tapPi = android.app.PendingIntent.getActivity(
+                    context, tapRequestCode, openIntent,
+                    android.app.PendingIntent.FLAG_UPDATE_CURRENT
+                            | android.app.PendingIntent.FLAG_IMMUTABLE);
+
             // BugFix-7: CATEGORY_ALARM se DND bypass hota hai; DEFAULT_ALL se vibration+sound
             android.app.NotificationManager nm =
                     (android.app.NotificationManager) context.getSystemService(
@@ -4463,18 +4517,21 @@ public class MainActivity extends AppCompatActivity {
             if (nm != null) {
                 android.app.Notification.Builder builder;
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    builder = new android.app.Notification.Builder(context, "REMINDERS");
+                    // BugFix-Notif-Sound: REMINDERS_V2 channel use karo jisme sound properly set hai
+                    builder = new android.app.Notification.Builder(context, "REMINDERS_V2");
                 } else {
                     builder = new android.app.Notification.Builder(context);
                 }
                 builder.setSmallIcon(R.mipmap.ic_launcher)
-                        .setContentTitle("\u23F0 GoNotes Alert") // ⏰
-                        .setContentText("A secure reminder has been triggered.")
+                        .setContentTitle(notifTitle)
+                        .setContentText(notifText)
+                        // BugFix-Notif-Tap: Tap karne par app open ho
+                        .setContentIntent(tapPi)
                         .setAutoCancel(true)
                         .setPriority(android.app.Notification.PRIORITY_HIGH)
                         // BugFix-7: DND bypass ke liye CATEGORY_ALARM
                         .setCategory(android.app.Notification.CATEGORY_ALARM)
-                        // BugFix-7: Vibration + sound default
+                        // BugFix-7: Vibration + sound default (Android < 8 ke liye)
                         .setDefaults(android.app.Notification.DEFAULT_ALL);
                 nm.notify(notifId, builder.build());
             }
@@ -4501,7 +4558,46 @@ public class MainActivity extends AppCompatActivity {
             getSharedPreferences("MyNotesData", MODE_PRIVATE).edit().putString("view_mode", "list").apply();
         }
     }
-    private void handleIntentAction(Intent i) {}
+    private void handleIntentAction(Intent i) {
+        if (i == null) return;
+        // BugFix-Notif-Tap: Notification se aaya open_note_id store karo —
+        // notes abhi load nahi hui hain, checkInitialVaultUnlock ke baad open hoga.
+        String noteId = i.getStringExtra("open_note_id");
+        if (noteId != null && !noteId.isEmpty()) {
+            pendingOpenNoteId = noteId;
+        }
+    }
+
+    // BugFix-Notif-Tap: pendingOpenNoteId wali note ko allNotesList se dhundh ke open karo
+    private void openPendingNoteIfAny() {
+        if (pendingOpenNoteId == null) return;
+        String id = pendingOpenNoteId;
+        pendingOpenNoteId = null;
+        for (HashMap<String, String> n : allNotesList) {
+            if (id.equals(n.get("id")) && !"true".equals(n.get("isTrashed"))) {
+                openNoteContent(n);
+                return;
+            }
+        }
+    }
+
+    // BugFix-Notif-Tap: App already chal rahi ho aur notification aaye toh
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (intent == null) return;
+        String noteId = intent.getStringExtra("open_note_id");
+        if (noteId != null && !noteId.isEmpty()) {
+            // Notes already loaded hain — seedha open karo
+            for (HashMap<String, String> n : allNotesList) {
+                if (noteId.equals(n.get("id")) && !"true".equals(n.get("isTrashed"))) {
+                    openNoteContent(n);
+                    return;
+                }
+            }
+        }
+    }
 
     private void checkCameraPermissionAndOpen() {
         if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
