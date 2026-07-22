@@ -197,6 +197,10 @@ public class MainActivity extends AppCompatActivity {
     private static final int NOTIFICATION_PERMISSION_REQUEST = 201;
     private String pendingCameraPhotoPath;
 
+    // BugFix-1: Android 12+ permission retry ke liye pending alarm data
+    private long pendingAlarmTime = -1;
+    private boolean pendingAlarmIsDaily = false;
+
     private ArrayList<String> categoriesList = new ArrayList<>();
     private String selectedCategoryFilter = "All";
     private String currentNoteCategory = "General";
@@ -438,6 +442,8 @@ public class MainActivity extends AppCompatActivity {
             channel.setDescription("Reminders for your secure notes");
             // SECURE: Hide sensitive content from lockscreen by default
             channel.setLockscreenVisibility(android.app.Notification.VISIBILITY_PRIVATE);
+            // BugFix-7: Vibration explicitly enable karo
+            channel.enableVibration(true);
             android.app.NotificationManager nm = getSystemService(android.app.NotificationManager.class);
             if (nm != null) nm.createNotificationChannel(channel);
         }
@@ -3589,7 +3595,32 @@ public class MainActivity extends AppCompatActivity {
     }
     private void setupNoteEditorLogic() {
         buttonSpeak.setOnClickListener(v -> speakNote());
-        buttonAlarm.setOnClickListener(v -> showAlarmDialog());
+        buttonAlarm.setOnClickListener(v -> {
+            // BugFix-3: Agar alarm pehle se set hai toh cancel/reset dialog dikhao
+            boolean alarmActive = false;
+            if (currentEditingNoteId != null) {
+                for (HashMap<String, String> _n : allNotesList) {
+                    if (currentEditingNoteId.equals(_n.get("id"))) {
+                        alarmActive = _n.get("alarm_time") != null;
+                        break;
+                    }
+                }
+            }
+            if (alarmActive) {
+                new AlertDialog.Builder(this)
+                        .setTitle("Alarm Already Set")
+                        .setMessage("Is note par alarm pehle se set hai. Kya karna hai?")
+                        .setPositiveButton("Naya Alarm Set Karo", (d, w) -> showAlarmDialog())
+                        .setNeutralButton("Alarm Cancel Karo", (d, w) -> {
+                            cancelAlarm(currentEditingNoteId);
+                            Toast.makeText(this, "Alarm cancel ho gaya", Toast.LENGTH_SHORT).show();
+                        })
+                        .setNegativeButton("Rehne Do", null)
+                        .show();
+            } else {
+                showAlarmDialog();
+            }
+        });
         buttonPin.setOnClickListener(v -> toggleNotePin());
         buttonMoreNote.setOnClickListener(v -> toggleNoteActions());
         // SECURE REAL-TIME SAVE: Pehredar with Debouncing (F-RealTime Fix)
@@ -4123,7 +4154,12 @@ public class MainActivity extends AppCompatActivity {
                 .setPositiveButton("Empty", (d, w) -> {
                     java.util.Iterator<HashMap<String, String>> it = allNotesList.iterator();
                     while (it.hasNext()) {
-                        if ("true".equals(it.next().get("isTrashed"))) it.remove();
+                        HashMap<String, String> _binNote = it.next();
+                        if ("true".equals(_binNote.get("isTrashed"))) {
+                            // BugFix-5: Permanently delete se pehle alarm cancel karo
+                            cancelAlarm(_binNote.get("id"));
+                            it.remove();
+                        }
                     }
                     saveNotesToStorage();
                     filterNotes("");
@@ -4159,13 +4195,25 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showAlarmDialog() {
+        // BugFix-8: Naya note hai toh pehle save karo — requestCode ke liye noteId chahiye
+        if (currentEditingNoteId == null) {
+            saveCurrentNote();
+        }
         final Calendar c = Calendar.getInstance();
         new DatePickerDialog(this, (view, year, month, day) -> {
             new TimePickerDialog(this, (v, hour, minute) -> {
                 Calendar selected = Calendar.getInstance();
-                selected.set(year, month, day, hour, minute);
+                // BugFix (seconds zeroing): seconds/milliseconds clear karo warna same-minute alarm miss ho sakta hai
+                selected.set(year, month, day, hour, minute, 0);
+                selected.set(Calendar.MILLISECOND, 0);
 
-                // New choice: Once or Every Day
+                // BugFix-9: Past time select karne par warning
+                if (selected.before(Calendar.getInstance())) {
+                    Toast.makeText(this, "Yeh time pehle ka hai. Aage ka time chuniye.", Toast.LENGTH_LONG).show();
+                    return;
+                }
+
+                // Once or Every Day
                 String[] choices = {"Only Once", "Every Day"};
                 new AlertDialog.Builder(this)
                         .setTitle("Reminder Type")
@@ -4182,68 +4230,72 @@ public class MainActivity extends AppCompatActivity {
         AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
         if (am == null) return;
 
-        // Android 12+ (API 31+): SCHEDULE_EXACT_ALARM permission runtime check
+        // BugFix-1: Android 12+ permission — params store karo, onResume mein retry hoga
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
             if (!am.canScheduleExactAlarms()) {
-                // User ko settings mein jaake permission deni hogi
+                pendingAlarmTime = time;
+                pendingAlarmIsDaily = isDaily;
                 new AlertDialog.Builder(this)
                         .setTitle("Permission Required")
-                        .setMessage("To set alarms, please allow 'Alarms & reminders' permission in Settings.")
-                        .setPositiveButton("Open Settings", (d, w) -> {
+                        .setMessage("Alarm set karne ke liye Settings mein 'Alarms & reminders' allow karein.")
+                        .setPositiveButton("Settings Kholein", (d, w) -> {
                             Intent settingsIntent = new Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM);
                             settingsIntent.setData(android.net.Uri.parse("package:" + getPackageName()));
                             startActivity(settingsIntent);
                         })
-                        .setNegativeButton("Cancel", null)
+                        .setNegativeButton("Cancel", (d, w) -> pendingAlarmTime = -1)
                         .show();
                 return;
             }
         }
 
+        // BugFix-10: Math.abs — hashCode negative ho sakta hai, requestCode positive chahiye
+        int requestCode = currentEditingNoteId != null ? Math.abs(currentEditingNoteId.hashCode()) : 0;
         Intent intent = new Intent(this, ReminderReceiver.class);
-        intent.putExtra("title", editTitle.getText().toString());
-        intent.putExtra("noteId", currentEditingNoteId); // FIX BUG 6: noteId pass karo taaki notification tap se sahi note khule
-        // FIX BUG 1: har note ka unique requestCode — warna saare alarms ek hi PendingIntent share karte hain
-        int requestCode = currentEditingNoteId != null ? currentEditingNoteId.hashCode() : 0;
+        intent.putExtra("noteId", currentEditingNoteId);
+        // BugFix-4: isDaily ReminderReceiver ko pass karo taaki woh next-day alarm re-schedule kare
+        intent.putExtra("isDaily", isDaily);
         PendingIntent pi = PendingIntent.getBroadcast(this, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-        if (isDaily) {
-            // FIX BUG 5: setRepeating Android 6+ par inexact hai — setExactAndAllowWhileIdle use karo
-            // ReminderReceiver mein next day ka alarm re-schedule karna hoga
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, time, pi);
-            } else {
-                am.setRepeating(AlarmManager.RTC_WAKEUP, time, AlarmManager.INTERVAL_DAY, pi);
-            }
+        // Android 6+ par setExactAndAllowWhileIdle use karo (dono once aur daily ke liye)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, time, pi);
         } else {
-            // One-time alarm — exact use karo reliability ke liye
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, time, pi);
+            // Android 5 aur neeche: daily ke liye setRepeating, once ke liye set
+            if (isDaily) {
+                am.setRepeating(AlarmManager.RTC_WAKEUP, time, AlarmManager.INTERVAL_DAY, pi);
             } else {
                 am.set(AlarmManager.RTC_WAKEUP, time, pi);
             }
         }
 
-        // Persistence: Save alarm status to the current note
+        // Note mein alarm data save karo
         if (currentEditingNoteId != null) {
             for (HashMap<String, String> n : allNotesList) {
-                if (currentEditingNoteId.equals(n.get("id"))) { // FIX BUG 3: null-safe comparison
+                if (currentEditingNoteId.equals(n.get("id"))) {
                     n.put("alarm_time", String.valueOf(time));
                     n.put("alarm_repeat", isDaily ? "daily" : "once");
                     saveNotesToStorage();
                     break;
                 }
             }
+            // BugFix-6: Alarm data unencrypted registry mein bhi save karo — BootReceiver ke liye
+            getSharedPreferences("MyNotesAlarms", MODE_PRIVATE).edit()
+                    .putLong("alarm_" + currentEditingNoteId, time)
+                    .putBoolean("daily_" + currentEditingNoteId, isDaily)
+                    .apply();
         }
 
+        pendingAlarmTime = -1; // pending clear karo agar retry se aaya tha
         Toast.makeText(this, isDaily ? "Daily reminder set!" : "One-time reminder set!", Toast.LENGTH_SHORT).show();
     }
 
-    // FIX BUG 2: Alarm cancel karne ka function — note delete hone par alarm bhi cancel hoga
+    // BugFix-2,5: Alarm cancel — AlarmManager + note data + registry sab clear karo
     private void cancelAlarm(String noteId) {
         if (noteId == null) return;
+        // BugFix-10: Math.abs — setAlarm se same requestCode match karana zaroori hai
+        int requestCode = Math.abs(noteId.hashCode());
         Intent intent = new Intent(this, ReminderReceiver.class);
-        int requestCode = noteId.hashCode();
         PendingIntent pi = PendingIntent.getBroadcast(this, requestCode, intent,
                 PendingIntent.FLAG_NO_CREATE | PendingIntent.FLAG_IMMUTABLE);
         if (pi != null) {
@@ -4251,6 +4303,20 @@ public class MainActivity extends AppCompatActivity {
             if (am != null) am.cancel(pi);
             pi.cancel();
         }
+        // BugFix-2: Note se alarm_time/alarm_repeat clear karo — warna icon reh jaata hai
+        for (HashMap<String, String> n : allNotesList) {
+            if (noteId.equals(n.get("id"))) {
+                n.remove("alarm_time");
+                n.remove("alarm_repeat");
+                saveNotesToStorage();
+                break;
+            }
+        }
+        // BugFix-6: Alarm registry se bhi hata dena — BootReceiver galat alarm na schedule kare
+        getSharedPreferences("MyNotesAlarms", MODE_PRIVATE).edit()
+                .remove("alarm_" + noteId)
+                .remove("daily_" + noteId)
+                .apply();
     }
 
     private void toggleNoteLock() {
@@ -4339,9 +4405,61 @@ public class MainActivity extends AppCompatActivity {
     public static class ReminderReceiver extends android.content.BroadcastReceiver {
         @Override
         public void onReceive(android.content.Context context, android.content.Intent intent) {
-            // SECURE: Use generic text in notification to prevent data exposure (Finding F-Notification Fix)
-            // We no longer use "Reminder: " string which was pakda-ed by scanner.
-            android.app.NotificationManager nm = (android.app.NotificationManager) context.getSystemService(android.content.Context.NOTIFICATION_SERVICE);
+            String noteId = intent.getStringExtra("noteId");
+            boolean isDaily = intent.getBooleanExtra("isDaily", false);
+            android.content.SharedPreferences alarmSp =
+                    context.getSharedPreferences("MyNotesAlarms", android.content.Context.MODE_PRIVATE);
+
+            if (isDaily && noteId != null) {
+                // BugFix-4: Daily alarm — next-day ke liye dobara schedule karo
+                android.app.AlarmManager am =
+                        (android.app.AlarmManager) context.getSystemService(android.content.Context.ALARM_SERVICE);
+                if (am != null) {
+                    boolean canSchedule =
+                            android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S
+                                    || am.canScheduleExactAlarms();
+                    if (canSchedule) {
+                        long nextTime = System.currentTimeMillis() + android.app.AlarmManager.INTERVAL_DAY;
+                        android.content.Intent nextIntent =
+                                new android.content.Intent(context, ReminderReceiver.class);
+                        nextIntent.putExtra("noteId", noteId);
+                        nextIntent.putExtra("isDaily", true);
+                        int rc = Math.abs(noteId.hashCode());
+                        android.app.PendingIntent pi = android.app.PendingIntent.getBroadcast(
+                                context, rc, nextIntent,
+                                android.app.PendingIntent.FLAG_UPDATE_CURRENT
+                                        | android.app.PendingIntent.FLAG_IMMUTABLE);
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                            am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, nextTime, pi);
+                        } else {
+                            am.set(android.app.AlarmManager.RTC_WAKEUP, nextTime, pi);
+                        }
+                        // Registry update karo — BootReceiver ke liye
+                        alarmSp.edit().putLong("alarm_" + noteId, nextTime).apply();
+                        // MainActivity ko next alarm_time update karne ka signal do
+                        context.getSharedPreferences("MyNotesData", android.content.Context.MODE_PRIVATE)
+                                .edit().putString("alarm_next_" + noteId, String.valueOf(nextTime)).apply();
+                    }
+                }
+            } else if (!isDaily && noteId != null) {
+                // BugFix-2: One-time alarm fire hua — MainActivity ko batao taaki icon hata sake
+                java.util.Set<String> fired = new java.util.HashSet<>(
+                        context.getSharedPreferences("MyNotesData", android.content.Context.MODE_PRIVATE)
+                                .getStringSet("fired_once_alarms", new java.util.HashSet<>()));
+                fired.add(noteId);
+                context.getSharedPreferences("MyNotesData", android.content.Context.MODE_PRIVATE)
+                        .edit().putStringSet("fired_once_alarms", fired).apply();
+                // Registry se bhi hata do
+                alarmSp.edit().remove("alarm_" + noteId).remove("daily_" + noteId).apply();
+            }
+
+            // BugFix-10: Stable notification ID — cast overflow nahi, aur har note ka alag ID
+            int notifId = (noteId != null) ? Math.abs(noteId.hashCode()) : 0;
+
+            // BugFix-7: CATEGORY_ALARM se DND bypass hota hai; DEFAULT_ALL se vibration+sound
+            android.app.NotificationManager nm =
+                    (android.app.NotificationManager) context.getSystemService(
+                            android.content.Context.NOTIFICATION_SERVICE);
             if (nm != null) {
                 android.app.Notification.Builder builder;
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -4349,14 +4467,16 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     builder = new android.app.Notification.Builder(context);
                 }
-
                 builder.setSmallIcon(R.mipmap.ic_launcher)
-                        .setContentTitle("⏰ GoNotes Alert")
-                        .setContentText("A secure reminder has been triggered.") // Generic content
+                        .setContentTitle("\u23F0 GoNotes Alert") // ⏰
+                        .setContentText("A secure reminder has been triggered.")
                         .setAutoCancel(true)
-                        .setPriority(android.app.Notification.PRIORITY_HIGH);
-
-                nm.notify((int) System.currentTimeMillis(), builder.build());
+                        .setPriority(android.app.Notification.PRIORITY_HIGH)
+                        // BugFix-7: DND bypass ke liye CATEGORY_ALARM
+                        .setCategory(android.app.Notification.CATEGORY_ALARM)
+                        // BugFix-7: Vibration + sound default
+                        .setDefaults(android.app.Notification.DEFAULT_ALL);
+                nm.notify(notifId, builder.build());
             }
         }
     }
@@ -4517,6 +4637,8 @@ public class MainActivity extends AppCompatActivity {
                         n.put("modified_at", String.valueOf(System.currentTimeMillis()));
                         Toast.makeText(this, "Note restored", Toast.LENGTH_SHORT).show();
                     } else {
+                        // BugFix-5: Permanently delete se pehle alarm cancel karo
+                        cancelAlarm(n.get("id"));
                         recordDeletedId(n.get("id")); // Tombstone logic
                         allNotesList.remove(n);
                         Toast.makeText(this, "Permanently deleted", Toast.LENGTH_SHORT).show();
@@ -4649,6 +4771,8 @@ public class MainActivity extends AppCompatActivity {
                         while (it.hasNext()) {
                             HashMap<String, String> item = it.next();
                             if (idsToRemove.contains(item.get("id"))) {
+                                // BugFix-5: Permanently delete se pehle alarm cancel karo
+                                cancelAlarm(item.get("id"));
                                 recordDeletedId(item.get("id")); // Tombstone
                                 it.remove();
                             }
@@ -5300,6 +5424,56 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+
+        android.content.SharedPreferences sp = getSharedPreferences("MyNotesData", MODE_PRIVATE);
+
+        // BugFix-2: One-time alarm fire ho gaya — note se alarm_time clear karo
+        java.util.Set<String> firedIds = sp.getStringSet("fired_once_alarms", null);
+        if (firedIds != null && !firedIds.isEmpty()) {
+            boolean changed = false;
+            for (HashMap<String, String> n : allNotesList) {
+                if (firedIds.contains(n.get("id"))) {
+                    n.remove("alarm_time");
+                    n.remove("alarm_repeat");
+                    changed = true;
+                }
+            }
+            if (changed) { saveNotesToStorage(); } // notifyDataSetChanged inside saveNotesToStorage covers UI update
+            sp.edit().remove("fired_once_alarms").apply();
+        }
+
+        // BugFix-4: Daily alarm fire hua — note mein next-day alarm_time update karo
+        boolean dailyChanged = false;
+        for (HashMap<String, String> n : allNotesList) {
+            String nId = n.get("id");
+            String nextTimeStr = nId != null ? sp.getString("alarm_next_" + nId, null) : null;
+            if (nextTimeStr != null) {
+                n.put("alarm_time", nextTimeStr);
+                sp.edit().remove("alarm_next_" + nId).apply();
+                dailyChanged = true;
+            }
+        }
+        if (dailyChanged) { saveNotesToStorage(); } // notifyDataSetChanged inside saveNotesToStorage covers UI update
+
+        // BugFix-1: User Settings se wapas aaya — pending alarm retry karo
+        if (pendingAlarmTime != -1) {
+            AlarmManager _am = (AlarmManager) getSystemService(ALARM_SERVICE);
+            if (_am != null) {
+                boolean canSchedule =
+                        android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S
+                                || _am.canScheduleExactAlarms();
+                if (canSchedule) {
+                    long _t = pendingAlarmTime;
+                    boolean _daily = pendingAlarmIsDaily;
+                    pendingAlarmTime = -1;
+                    setAlarm(_t, _daily);
+                }
+            }
+        }
+    }
+
     protected void onStop() {
         super.onStop();
         // FIX-B: App band hone par background mein auto-cleanup
