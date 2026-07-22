@@ -465,6 +465,23 @@ public class MainActivity extends AppCompatActivity {
                             .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
                             .build());
             if (nm != null) nm.createNotificationChannel(channelV2);
+
+            // Fix-Alarm-Sound: New channel V3 with true alarm sound + alarm audio stream.
+            // V2 used TYPE_NOTIFICATION — so only a soft notification ding played.
+            // Android does not allow updating an existing channel's sound, so a new channel is required.
+            android.app.NotificationChannel channelV3 = new android.app.NotificationChannel(
+                    "REMINDERS_V3", "Note Alarms", android.app.NotificationManager.IMPORTANCE_HIGH);
+            channelV3.setDescription("Alarm reminders for your notes");
+            channelV3.setLockscreenVisibility(android.app.Notification.VISIBILITY_PRIVATE);
+            channelV3.enableVibration(true);
+            android.net.Uri alarmSoundUri = android.media.RingtoneManager.getDefaultUri(
+                    android.media.RingtoneManager.TYPE_ALARM);
+            channelV3.setSound(alarmSoundUri,
+                    new android.media.AudioAttributes.Builder()
+                            .setUsage(android.media.AudioAttributes.USAGE_ALARM)
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build());
+            if (nm != null) nm.createNotificationChannel(channelV3);
         }
 
         // Android 13+ par POST_NOTIFICATIONS runtime permission request
@@ -4517,8 +4534,8 @@ public class MainActivity extends AppCompatActivity {
             if (nm != null) {
                 android.app.Notification.Builder builder;
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    // BugFix-Notif-Sound: REMINDERS_V2 channel use karo jisme sound properly set hai
-                    builder = new android.app.Notification.Builder(context, "REMINDERS_V2");
+                    // Fix-Alarm-Sound: REMINDERS_V3 channel use karo jisme true alarm sound set hai
+                    builder = new android.app.Notification.Builder(context, "REMINDERS_V3");
                 } else {
                     builder = new android.app.Notification.Builder(context);
                 }
