@@ -1492,7 +1492,7 @@ public class MainActivity extends AppCompatActivity {
                     // Account key se decrypt fail — backup incompatible hai
                     mainHandler.post(() -> new AlertDialog.Builder(this)
                             .setTitle("Backup Incompatible")
-                            .setMessage("Yeh backup restore nahi ho sakta. Please apne current phone se ek naya backup lo aur phir try karo.")
+                            .setMessage("This backup cannot be restored. Please create a new backup from your current phone and try again.")
                             .setPositiveButton("OK", null)
                             .show());
                     return;
@@ -4230,7 +4230,7 @@ public class MainActivity extends AppCompatActivity {
 
                 // BugFix-9: Past time select karne par warning
                 if (selected.before(Calendar.getInstance())) {
-                    Toast.makeText(this, "Yeh time pehle ka hai. Aage ka time chuniye.", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "Selected time is in the past. Please choose a future time.", Toast.LENGTH_LONG).show();
                     return;
                 }
 
@@ -4496,7 +4496,7 @@ public class MainActivity extends AppCompatActivity {
             String notifTitle = "\u23F0 GoNotes Reminder"; // ⏰
             String notifText = (savedTitle != null && !savedTitle.isEmpty())
                     ? savedTitle
-                    : "Aapka ek reminder trigger hua hai.";
+                    : "You have a new reminder.";
 
             // BugFix-Notif-Tap: Notification tap karne par MainActivity open ho
             android.content.Intent openIntent = new android.content.Intent(context, MainActivity.class);
