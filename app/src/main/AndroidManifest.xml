@@ -11,6 +11,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- Screen wake karne ke liye jab phone locked ho aur alarm bajaye -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <!-- FORCE STRIP UNWANTED PERMISSIONS FROM LIBRARIES (Finding H2 Fix) -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" tools:node="remove" />

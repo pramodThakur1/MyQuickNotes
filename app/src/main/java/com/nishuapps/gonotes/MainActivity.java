@@ -4448,6 +4448,18 @@ public class MainActivity extends AppCompatActivity {
     public static class ReminderReceiver extends android.content.BroadcastReceiver {
         @Override
         public void onReceive(android.content.Context context, android.content.Intent intent) {
+            // Screen wake fix: locked phone par bhi screen on karo (3 second ke liye)
+            android.os.PowerManager pm = (android.os.PowerManager)
+                    context.getSystemService(android.content.Context.POWER_SERVICE);
+            if (pm != null) {
+                android.os.PowerManager.WakeLock wl = pm.newWakeLock(
+                        android.os.PowerManager.FULL_WAKE_LOCK
+                                | android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP
+                                | android.os.PowerManager.ON_AFTER_RELEASE,
+                        "GoNotes:AlarmWakeLock");
+                wl.acquire(3000L); // auto-release after 3 seconds
+            }
+
             String noteId = intent.getStringExtra("noteId");
             boolean isDaily = intent.getBooleanExtra("isDaily", false);
             android.content.SharedPreferences alarmSp =
@@ -4532,11 +4544,20 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     builder = new android.app.Notification.Builder(context);
                 }
+                // Screen wake fix: fullScreenIntent se locked screen par bhi notification poori tarah dikhti hai
+                int fullScreenRequestCode = (noteId != null) ? Math.abs(noteId.hashCode()) + 2000 : 2000;
+                android.app.PendingIntent fullScreenPi = android.app.PendingIntent.getActivity(
+                        context, fullScreenRequestCode, openIntent,
+                        android.app.PendingIntent.FLAG_UPDATE_CURRENT
+                                | android.app.PendingIntent.FLAG_IMMUTABLE);
+
                 builder.setSmallIcon(R.mipmap.ic_launcher)
                         .setContentTitle(notifTitle)
                         .setContentText(notifText)
                         // BugFix-Notif-Tap: Tap karne par app open ho
                         .setContentIntent(tapPi)
+                        // Screen wake fix: locked screen par puri notification dikhao aur screen on karo
+                        .setFullScreenIntent(fullScreenPi, true)
                         .setAutoCancel(true)
                         .setPriority(android.app.Notification.PRIORITY_HIGH)
                         // BugFix-7: DND bypass ke liye CATEGORY_ALARM
