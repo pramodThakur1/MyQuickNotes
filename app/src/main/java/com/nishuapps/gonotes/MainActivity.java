@@ -246,9 +246,7 @@ public class MainActivity extends AppCompatActivity {
     private final ArrayList<String> redoTitleList = new ArrayList<>(); // Title redo tracking
     private boolean isUndoRedoActive = false;
     private boolean isKeyboardOpen = false;
-    private boolean isVaultUnlocked = false; // SECURE GUARD: Prevent data wipe before auth
-    private boolean isVaultAuthInProgress = false;
-    private boolean startupUnlockAttempted = false;
+    private boolean isVaultUnlocked = true;
     private ViewTreeObserver.OnGlobalLayoutListener layoutListener;
 
     private TextToSpeech textToSpeech;
@@ -571,7 +569,8 @@ public class MainActivity extends AppCompatActivity {
         }
 
         migrateIfNeeded();
-        checkInitialVaultUnlock();
+        loadNotesFromStorage();
+        openPendingNoteIfAny();
     }
 
     @Override
@@ -775,9 +774,6 @@ public class MainActivity extends AppCompatActivity {
                 layoutSplashLayer.animate().alpha(0f).setDuration(400).withEndAction(() -> {
                     layoutSplashLayer.setVisibility(View.GONE);
                     if (!isSelectionMode && !isBinMode) buttonPlus.setVisibility(View.VISIBLE);
-
-                    // SECURE STARTUP UNLOCK: Load notes only after verification
-                    checkInitialVaultUnlock();
                 }).start();
             }
         }, 1500);
@@ -1899,19 +1895,6 @@ public class MainActivity extends AppCompatActivity {
     }
     private void collapseCategories() { isCategoriesExpanded = false; scrollCategories.setVisibility(View.GONE); textCategoriesHeader.setText("Categories ▸"); }
 
-    private void checkInitialVaultUnlock() {
-        if (startupUnlockAttempted) {
-            return;
-        }
-        startupUnlockAttempted = true;
-        // Startup lock removed — app directly opens
-        // Individual note lock still works as before
-        isVaultUnlocked = true;
-        loadNotesFromStorage();
-        // BugFix-Notif-Tap: Notes load hone ke baad pending notification note open karo
-        openPendingNoteIfAny();
-    }
-
     private void checkBiometricAndUnlock(HashMap<String, String> n) {
         // SECURITY: Disable biometric on rooted devices as it can be easily bypassed
         if (isDeviceRooted()) {
@@ -2189,6 +2172,16 @@ public class MainActivity extends AppCompatActivity {
 
         // CRITICAL: Force synchronous save to disk
         saveNotesToStorage();
+
+        // Fix Point 10: Note rename hone par alarm ka stored title bhi update karo
+        if (currentEditingNoteId != null) {
+            SharedPreferences alarmPrefs = getSharedPreferences("MyNotesAlarms", MODE_PRIVATE);
+            if (alarmPrefs.contains("alarm_" + currentEditingNoteId)) {
+                if (!t.isEmpty()) {
+                    alarmPrefs.edit().putString("title_" + currentEditingNoteId, t).apply();
+                }
+            }
+        }
 
         if (driveService != null) {
             uploadBackupToDriveBackground(true);
@@ -4577,8 +4570,7 @@ public class MainActivity extends AppCompatActivity {
     }
     private void handleIntentAction(Intent i) {
         if (i == null) return;
-        // BugFix-Notif-Tap: Notification se aaya open_note_id store karo —
-        // notes abhi load nahi hui hain, checkInitialVaultUnlock ke baad open hoga.
+        // Notification se aaya open_note_id store karo — notes load hone ke baad open hoga.
         String noteId = i.getStringExtra("open_note_id");
         if (noteId != null && !noteId.isEmpty()) {
             pendingOpenNoteId = noteId;
