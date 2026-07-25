@@ -796,6 +796,17 @@
                     android:clickable="true"
                     android:focusable="true"/>
 
+                <!-- Gmail DP: login ke baad Google account ki profile photo yahan dikhegi -->
+                <ImageView
+                    android:id="@+id/imageUserDp"
+                    android:layout_width="52dp"
+                    android:layout_height="52dp"
+                    android:layout_alignParentRight="true"
+                    android:layout_centerVertical="true"
+                    android:scaleType="centerCrop"
+                    android:visibility="gone"
+                    android:contentDescription="Profile Picture" />
+
             </RelativeLayout>
 
             <TextView android:id="@+id/menuBin" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/menu_bin" android:textSize="18sp" android:textColor="?attr/appPrimaryTextColor" android:padding="15dp" android:background="@drawable/drawer_item_bg" android:layout_marginTop="5dp" android:layout_marginBottom="5dp"/>

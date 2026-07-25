@@ -141,6 +141,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView buttonMenu, menuBin, menuTheme, menuSettings, menuManageCategories, textCategoriesHeader, textLastSync, buttonToggleView, buttonSort, buttonEmptyBin, textEmptyState, textWordCount, textUserEmail, buttonLogout, buttonClearSearch;
     private View lineDivider;
     private ImageView buttonCloudSync;
+    private ImageView imageUserDp;
     private View scrollCategories, buttonToggleCategories;
     private boolean isCategoriesExpanded = true;
     private boolean isBinMode = false, isNormalFilterMode = false, isNotebookMode = false, isRecentMode = true;
@@ -796,6 +797,7 @@ public class MainActivity extends AppCompatActivity {
         textLastSync = findViewById(R.id.textLastSync);
         textUserEmail = findViewById(R.id.textUserEmail);
         buttonLogout = findViewById(R.id.buttonLogout);
+        imageUserDp = findViewById(R.id.imageUserDp);
         listViewNotes = findViewById(R.id.listViewNotes);
         gridViewNotes = findViewById(R.id.gridViewNotes);
         editTitle = findViewById(R.id.editTitle);
@@ -1141,9 +1143,27 @@ public class MainActivity extends AppCompatActivity {
             textUserEmail.setText("Hi, " + account.getDisplayName());
             textUserEmail.setVisibility(View.VISIBLE);
             buttonLogout.setVisibility(View.VISIBLE);
+            // Gmail DP load karo Glide se (Glide already project mein available hai)
+            if (imageUserDp != null) {
+                if (account.getPhotoUrl() != null) {
+                    imageUserDp.setVisibility(View.VISIBLE);
+                    Glide.with(this)
+                            .load(account.getPhotoUrl())
+                            .circleCrop()
+                            .placeholder(R.mipmap.ic_launcher_round)
+                            .error(R.mipmap.ic_launcher_round)
+                            .into(imageUserDp);
+                } else {
+                    imageUserDp.setVisibility(View.GONE);
+                }
+            }
         } else {
             textUserEmail.setVisibility(View.GONE);
             buttonLogout.setVisibility(View.GONE);
+            // Logout ke baad DP hide karo
+            if (imageUserDp != null) {
+                imageUserDp.setVisibility(View.GONE);
+            }
         }
     }
 
