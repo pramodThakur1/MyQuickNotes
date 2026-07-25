@@ -870,10 +870,10 @@ public class MainActivity extends AppCompatActivity {
                 drawerLayout.openDrawer(GravityCompat.START);
             }
         });
-        tabRecent.setOnClickListener(v -> { isBinMode = false; isNormalFilterMode = false; isNotebookMode = false; isRecentMode = true; updateFilterTabsUI(); sortNotesBy(getSharedPreferences("MyNotesData", MODE_PRIVATE).getString("sort_criteria", "Newest First")); });
-        tabNormalNotes.setOnClickListener(v -> { isBinMode = false; isNormalFilterMode = true; isNotebookMode = false; isRecentMode = false; updateFilterTabsUI(); sortNotesBy(getSharedPreferences("MyNotesData", MODE_PRIVATE).getString("sort_criteria", "Newest First")); });
+        tabRecent.setOnClickListener(v -> { selectedCategoryFilter = "All"; isBinMode = false; isNormalFilterMode = false; isNotebookMode = false; isRecentMode = true; updateFilterTabsUI(); sortNotesBy(getSharedPreferences("MyNotesData", MODE_PRIVATE).getString("sort_criteria", "Newest First")); });
+        tabNormalNotes.setOnClickListener(v -> { selectedCategoryFilter = "All"; isBinMode = false; isNormalFilterMode = true; isNotebookMode = false; isRecentMode = false; updateFilterTabsUI(); sortNotesBy(getSharedPreferences("MyNotesData", MODE_PRIVATE).getString("sort_criteria", "Newest First")); });
         tabNotebooks.setOnClickListener(v -> {
-            isBinMode = false; isNormalFilterMode = false; isNotebookMode = true; isRecentMode = false;
+            selectedCategoryFilter = "All"; isBinMode = false; isNormalFilterMode = false; isNotebookMode = true; isRecentMode = false;
             currentParentId = "root"; currentLevel = 1;
             navigationPathIds.clear(); navigationPathNames.clear();
             updateFilterTabsUI(); sortNotesBy(getSharedPreferences("MyNotesData", MODE_PRIVATE).getString("sort_criteria", "Newest First"));
@@ -4602,10 +4602,12 @@ public class MainActivity extends AppCompatActivity {
         if (listViewNotes.getVisibility() == View.VISIBLE) {
             listViewNotes.setVisibility(View.GONE);
             gridViewNotes.setVisibility(View.VISIBLE);
+            buttonToggleView.setText("⊞");
             getSharedPreferences("MyNotesData", MODE_PRIVATE).edit().putString("view_mode", "grid").apply();
         } else {
             gridViewNotes.setVisibility(View.GONE);
             listViewNotes.setVisibility(View.VISIBLE);
+            buttonToggleView.setText("≡");
             getSharedPreferences("MyNotesData", MODE_PRIVATE).edit().putString("view_mode", "list").apply();
         }
     }
