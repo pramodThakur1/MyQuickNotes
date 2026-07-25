@@ -3186,6 +3186,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void enterBinMode() {
+        saveNavigationState(); // bin se wapas aane par sahi tab pe land karo
         isBinMode = true;
         isNotebookMode = false;
         isNormalFilterMode = false;
@@ -3201,6 +3202,14 @@ public class MainActivity extends AppCompatActivity {
 
     private void exitBinMode() {
         isBinMode = false;
+        isRecentMode = prevIsRecentMode;
+        isNormalFilterMode = prevIsNormalFilterMode;
+        isNotebookMode = prevIsNotebookMode;
+        selectedCategoryFilter = prevSelectedCategoryFilter;
+        currentParentId = prevCurrentParentId;
+        currentLevel = prevCurrentLevel;
+        navigationPathIds.clear(); navigationPathIds.addAll(prevNavigationPathIds);
+        navigationPathNames.clear(); navigationPathNames.addAll(prevNavigationPathNames);
         buttonPlus.setVisibility(View.VISIBLE);
         buttonMenu.setText("☰");
         buttonEmptyBin.setVisibility(View.GONE);
