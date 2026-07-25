@@ -1264,15 +1264,10 @@ public class MainActivity extends AppCompatActivity {
                     final SecretKey accountKey = getAccountDerivedKey(account.getId());
                     final java.io.File tempFileRef = tempFile;
                     mainHandler.post(() -> {
-                        try {
-                            performImportWithKey(Uri.fromFile(tempFileRef), accountKey, true);
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        } finally {
-                            // FIX: drive_download.qnb restore ke baad delete karo.
-                            // Pehle permanently cache mein rahti thi (~5-10MB bloat per restore).
-                            if (tempFileRef.exists()) tempFileRef.delete();
-                        }
+                        // RACE CONDITION FIX: finally block yahan nahi hoga.
+                        // File background thread mein padhne ke BAAD delete hogi
+                        // (performImportWithKey ke andar — neeche dekho).
+                        performImportWithKey(Uri.fromFile(tempFileRef), accountKey, true);
                     });
                 } else {
                     mainHandler.post(() -> Toast.makeText(this, "No existing backup found on cloud.", Toast.LENGTH_LONG).show());
@@ -1643,6 +1638,18 @@ public class MainActivity extends AppCompatActivity {
             } catch (Exception e) {
                 e.printStackTrace();
                 mainHandler.post(() -> Toast.makeText(this, "Import failed: Check your Backup Password", Toast.LENGTH_LONG).show());
+            } finally {
+                // RACE CONDITION FIX: Drive se download ki gayi temp file ko
+                // background thread ke khatam hone ke BAAD delete karo.
+                // (Pehle finally block mainHandler.post mein tha — file read hone se
+                //  PEHLE delete ho jaati thi → "Import failed" error aata tha.)
+                // drive_download.qnb = sirf Drive restore ki temp file. Manual import mein nahi aati.
+                if (uri != null && "file".equals(uri.getScheme())) {
+                    java.io.File tempF = new java.io.File(uri.getPath());
+                    if ("drive_download.qnb".equals(tempF.getName()) && tempF.exists()) {
+                        tempF.delete();
+                    }
+                }
             }
         });
     }
