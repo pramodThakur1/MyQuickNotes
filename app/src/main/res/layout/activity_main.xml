@@ -796,16 +796,6 @@
                     android:clickable="true"
                     android:focusable="true"/>
 
-                <TextView
-                    android:id="@+id/menuLanguage"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:text="🌐"
-                    android:textSize="22sp"
-                    android:gravity="center"
-                    android:layout_alignParentRight="true"
-                    android:layout_centerVertical="true"
-                    android:background="?attr/selectableItemBackgroundBorderless"/>
             </RelativeLayout>
 
             <TextView android:id="@+id/menuBin" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/menu_bin" android:textSize="18sp" android:textColor="?attr/appPrimaryTextColor" android:padding="15dp" android:background="@drawable/drawer_item_bg" android:layout_marginTop="5dp" android:layout_marginBottom="5dp"/>

@@ -59,7 +59,6 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
-import androidx.core.os.LocaleListCompat;
 import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -139,7 +138,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int IV_LENGTH = 12;
 
     private DrawerLayout drawerLayout;
-    private TextView buttonMenu, menuBin, menuTheme, menuLanguage, menuSettings, menuManageCategories, textCategoriesHeader, textLastSync, buttonToggleView, buttonSort, buttonEmptyBin, textEmptyState, textWordCount, textUserEmail, buttonLogout, buttonClearSearch;
+    private TextView buttonMenu, menuBin, menuTheme, menuSettings, menuManageCategories, textCategoriesHeader, textLastSync, buttonToggleView, buttonSort, buttonEmptyBin, textEmptyState, textWordCount, textUserEmail, buttonLogout, buttonClearSearch;
     private View lineDivider;
     private ImageView buttonCloudSync;
     private View scrollCategories, buttonToggleCategories;
@@ -751,7 +750,6 @@ public class MainActivity extends AppCompatActivity {
         textEmptyState = findViewById(R.id.textEmptyState);
         menuBin = findViewById(R.id.menuBin);
         menuTheme = findViewById(R.id.menuTheme);
-        menuLanguage = findViewById(R.id.menuLanguage);
         menuSettings = findViewById(R.id.menuSettings);
         menuManageCategories = findViewById(R.id.menuManageCategories);
         textCategoriesHeader = findViewById(R.id.textCategoriesHeader);
@@ -909,7 +907,6 @@ public class MainActivity extends AppCompatActivity {
             }
         });
         menuTheme.setOnClickListener(v -> toggleTheme());
-        menuLanguage.setOnClickListener(v -> showLanguageSelector());
         menuSettings.setOnClickListener(v -> showSettingsDialog());
         menuManageCategories.setOnClickListener(v -> showManageCategoriesDialog());
         buttonCancelSelection.setOnClickListener(v -> exitSelectionMode());
@@ -2851,19 +2848,6 @@ public class MainActivity extends AppCompatActivity {
 
         // Recreate to ensure all ?attr colors are freshly applied
         recreate();
-    }
-    private void showLanguageSelector() {
-        String[] languages = {"English", "Hindi"};
-        String[] langCodes = {"en", "hi"};
-
-        new AlertDialog.Builder(this)
-                .setTitle("Choose App Language")
-                .setItems(languages, (dialog, which) -> {
-                    LocaleListCompat appLocales = LocaleListCompat.forLanguageTags(langCodes[which]);
-                    AppCompatDelegate.setApplicationLocales(appLocales);
-                    Toast.makeText(this, "Language set to " + languages[which], Toast.LENGTH_SHORT).show();
-                })
-                .show();
     }
     private void showBackupRestoreDialog() {
         if (driveService == null) requestSignIn();
