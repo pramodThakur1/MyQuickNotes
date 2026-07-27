@@ -87,12 +87,8 @@ public class BootReceiver extends BroadcastReceiver {
                 context, requestCode, alarmIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (!am.canScheduleExactAlarms()) return; // permission nahi hai
-        }
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, time, pi);
+            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, time, pi);
         } else {
             am.set(AlarmManager.RTC_WAKEUP, time, pi);
         }

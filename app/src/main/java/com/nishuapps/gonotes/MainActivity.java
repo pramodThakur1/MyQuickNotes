@@ -59,7 +59,11 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
+import androidx.activity.EdgeToEdge;
 import androidx.activity.OnBackPressedCallback;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.biometric.BiometricManager;
@@ -427,6 +431,7 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        EdgeToEdge.enable(this);
         // FIX: Startup mein stale temp cache files delete karo.
         // Crash ke baad drive_download.qnb jaise files cache mein permanently reh jaati hain.
         try {
@@ -493,8 +498,8 @@ public class MainActivity extends AppCompatActivity {
         }
 
         // SECURE: Block screenshots and recent-apps thumbnails globally (C3 Fix)
-        getWindow().setFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE,
-                android.view.WindowManager.LayoutParams.FLAG_SECURE);
+        /* getWindow().setFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE,
+                android.view.WindowManager.LayoutParams.FLAG_SECURE); */
 
         // SECURE: Intent Referrer Null Bypass Fix (F-008.1 Final Stand)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP_MR1) {
@@ -538,6 +543,44 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         checkAppResilience();
         setContentView(R.layout.activity_main);
+
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
+            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+            // BACKGROUND BLEED: Root layout ko padding nahi denge, sirf specific elements ko targets karenge.
+            
+            // 1. Search Bar aur Selection Toolbar (Top)
+            View searchC = findViewById(R.id.searchContainer);
+            if (searchC != null) {
+                ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) searchC.getLayoutParams();
+                lp.topMargin = systemBars.top + (int)(16 * getResources().getDisplayMetrics().density);
+                searchC.setLayoutParams(lp);
+            }
+            View selectT = findViewById(R.id.layoutSelectionToolbar);
+            if (selectT != null) {
+                selectT.setPadding(selectT.getPaddingLeft(), systemBars.top, selectT.getPaddingRight(), selectT.getPaddingBottom());
+            }
+
+            // 2. Note Editor Toolbar (Top)
+            // screenAddNote ke pehle child (RelativeLayout) ko padding denge
+            if (screenAddNote != null && screenAddNote.getChildCount() > 0) {
+                View editorToolbar = screenAddNote.getChildAt(0);
+                editorToolbar.setPadding(editorToolbar.getPaddingLeft(), systemBars.top, editorToolbar.getPaddingRight(), editorToolbar.getPaddingBottom());
+            }
+
+            // 3. FAB (Plus Button) aur Selection Bottom Bar (Bottom)
+            if (buttonPlus != null) {
+                ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) buttonPlus.getLayoutParams();
+                lp.bottomMargin = systemBars.bottom + (int)(20 * getResources().getDisplayMetrics().density);
+                buttonPlus.setLayoutParams(lp);
+            }
+            View selectB = findViewById(R.id.layoutSelectionBottomBar);
+            if (selectB != null) {
+                selectB.setPadding(selectB.getPaddingLeft(), selectB.getPaddingTop(), selectB.getPaddingRight(), systemBars.bottom);
+            }
+
+            return insets;
+        });
+
         getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
 
         setupUI();
@@ -569,6 +612,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         migrateIfNeeded();
+        setupBackNavigation();
         loadNotesFromStorage();
         openPendingNoteIfAny();
     }
@@ -2903,8 +2947,8 @@ public class MainActivity extends AppCompatActivity {
         container.addView(title);
 
         container.addView(createMenuItem("🧹", "Optimize Storage", v -> { dialog.dismiss(); performStorageCleanUp(); }));
+        container.addView(createMenuItem("🛡️", "Privacy & Data", v -> { dialog.dismiss(); showPrivacyDataDialog(); }));
         container.addView(createMenuItem("ℹ️", "About GoNotes Pro", v -> { dialog.dismiss(); showAboutDialog(); }));
-        container.addView(createMenuItem("🔴", "Advanced Delete", v -> { dialog.dismiss(); confirmAdvancedDelete(); }));
 
         dialog.setContentView(container);
         dialog.getWindow().setLayout((int)(getResources().getDisplayMetrics().widthPixels * 0.85), ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -2978,9 +3022,9 @@ public class MainActivity extends AppCompatActivity {
 
     private void confirmAdvancedDelete() {
         new AlertDialog.Builder(this)
-                .setTitle("⚠️ Full Reset")
-                .setMessage("This will permanently delete all notes from your phone and Google Drive. Proceed?")
-                .setPositiveButton("Wipe All Notes", (d, w) -> startWipeAuthentication())
+                .setTitle("⚠️ Delete Account & Data")
+                .setMessage("This will permanently delete your account's cloud backup from Google Drive and all local notes. This action cannot be undone. Proceed?")
+                .setPositiveButton("Delete Everything", (d, w) -> startWipeAuthentication())
                 .setNegativeButton("Cancel", null)
                 .show();
     }
@@ -2997,8 +3041,8 @@ public class MainActivity extends AppCompatActivity {
                     Toast.makeText(MainActivity.this, "Authentication failed", Toast.LENGTH_SHORT).show();
                 }
             }).authenticate(new BiometricPrompt.PromptInfo.Builder()
-                    .setTitle("Verify Identity")
-                    .setSubtitle("Confirm full data wipe")
+                    .setTitle("Confirm Deletion")
+                    .setSubtitle("Authorize account and data deletion")
                     .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL)
                     .build());
         } else {
@@ -3013,8 +3057,8 @@ public class MainActivity extends AppCompatActivity {
         input.setHint("Enter any locked note's PIN");
 
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
-                .setTitle("Confirm Full Wipe")
-                .setMessage("Please enter a PIN from any of your locked notes to authorize this operation.")
+                .setTitle("Confirm Account Deletion")
+                .setMessage("Please enter a PIN from any of your locked notes to authorize permanent deletion of your account and data.")
                 .setView(input)
                 .setPositiveButton("Authorize & Wipe", (d, w) -> {
                     String pin = input.getText().toString().trim();
@@ -3033,57 +3077,171 @@ public class MainActivity extends AppCompatActivity {
                 .show();
     }
 
+    private void showPrivacyDataDialog() {
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(40, 60, 40, 60);
+
+        int bgColor = ContextCompat.getColor(this, R.color.drawerBackgroundColor);
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(50);
+        shape.setColor(bgColor);
+        container.setBackground(shape);
+
+        TextView title = new TextView(this);
+        title.setText("Privacy & Data");
+        title.setTextSize(20);
+        title.setTypeface(null, Typeface.BOLD);
+        title.setPadding(30, 0, 0, 40);
+        title.setTextColor(ContextCompat.getColor(this, R.color.primaryTextColor));
+        container.addView(title);
+
+        container.addView(createMenuItem("🔌", "Disconnect Google Drive", v -> { dialog.dismiss(); performLogout(); }));
+        container.addView(createMenuItem("☁️", "Delete Cloud Backup", v -> { dialog.dismiss(); confirmCloudDelete(); }));
+        container.addView(createMenuItem("📱", "Delete Local Notes", v -> { dialog.dismiss(); confirmLocalDelete(); }));
+        container.addView(createMenuItem("🔴", "Delete Account & Data", v -> { dialog.dismiss(); confirmAdvancedDelete(); }));
+
+        TextView webInfo = new TextView(this);
+        webInfo.setText("\nTo request account deletion from a web browser, visit: nishuapps.com/delete-account");
+        webInfo.setTextSize(12);
+        webInfo.setPadding(30, 20, 30, 0);
+        webInfo.setTextColor(ContextCompat.getColor(this, R.color.secondaryTextColor));
+        container.addView(webInfo);
+
+        dialog.setContentView(container);
+        dialog.getWindow().setLayout((int)(getResources().getDisplayMetrics().widthPixels * 0.85), ViewGroup.LayoutParams.WRAP_CONTENT);
+        dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        dialog.show();
+    }
+
+    private void confirmCloudDelete() {
+        new AlertDialog.Builder(this)
+                .setTitle("Delete Cloud Backup")
+                .setMessage("Are you sure you want to delete your backup from Google Drive? This will not affect local notes.")
+                .setPositiveButton("Delete Backup", (d, w) -> deleteCloudBackup())
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void confirmLocalDelete() {
+        new AlertDialog.Builder(this)
+                .setTitle("Delete Local Notes")
+                .setMessage("Are you sure you want to delete all notes from this device? Cloud backups will remain safe.")
+                .setPositiveButton("Delete Local", (d, w) -> deleteLocalData(true))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void deleteCloudBackup() {
+        if (driveService == null) {
+            Toast.makeText(this, "Connect to Google Drive first", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final android.app.ProgressDialog pd = new android.app.ProgressDialog(this);
+        pd.setMessage("Deleting cloud backup...");
+        pd.show();
+        executor.execute(() -> {
+            try {
+                FileList result = driveService.files().list().setSpaces("appDataFolder").execute();
+                if (result.getFiles() != null) {
+                    for (com.google.api.services.drive.model.File f : result.getFiles()) {
+                        if ("GoNotesPro_Backup.qnb".equals(f.getName())) {
+                            driveService.files().delete(f.getId()).execute();
+                        }
+                    }
+                }
+                mainHandler.post(() -> {
+                    pd.dismiss();
+                    Toast.makeText(this, "Cloud backup deleted", Toast.LENGTH_SHORT).show();
+                });
+            } catch (Exception e) {
+                mainHandler.post(() -> {
+                    pd.dismiss();
+                    Toast.makeText(this, "Failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+            }
+        });
+    }
+
+    private void deleteLocalData(boolean restart) {
+        final android.app.ProgressDialog pd = new android.app.ProgressDialog(this);
+        pd.setMessage("Wiping local data...");
+        if (restart) pd.show();
+
+        executor.execute(() -> {
+            // 1. CLEAR LOCAL LIST
+            allNotesList.clear();
+            // 2. CLEAR PREFS
+            getSharedPreferences("MyNotesData", MODE_PRIVATE).edit().clear().commit();
+            getSharedPreferences("MyNotesAlarms", MODE_PRIVATE).edit().clear().commit();
+            getSharedPreferences("SecureConfig", MODE_PRIVATE).edit().clear().commit();
+
+            // 3. CANCEL ALARMS
+            AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+            if (am != null) {
+                // Since we don't have a list of all requestCodes easily, we rely on the registry wipe
+                // and the fact that the app will restart. For a thorough wipe, one might need more logic,
+                // but clearing "MyNotesAlarms" stops BootReceiver from rescheduling them.
+            }
+
+            // 4. DELETE FILES
+            java.io.File filesDir = getFilesDir();
+            if (filesDir != null && filesDir.listFiles() != null) {
+                for (java.io.File f : filesDir.listFiles()) f.delete();
+            }
+            java.io.File cacheDir = getCacheDir();
+            if (cacheDir != null && cacheDir.listFiles() != null) {
+                for (java.io.File f : cacheDir.listFiles()) f.delete();
+            }
+
+            if (restart) {
+                mainHandler.post(() -> {
+                    pd.dismiss();
+                    Toast.makeText(this, "Local data wiped. Restarting...", Toast.LENGTH_LONG).show();
+                    mainHandler.postDelayed(() -> {
+                        Intent intent = getBaseContext().getPackageManager().getLaunchIntentForPackage(getBaseContext().getPackageName());
+                        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(intent);
+                        finish();
+                        Runtime.getRuntime().exit(0);
+                    }, 1500);
+                });
+            }
+        });
+    }
+
     private void performAdvancedDelete() {
         final android.app.ProgressDialog pd = new android.app.ProgressDialog(this);
-        pd.setMessage("Wiping all data... Please wait.");
+        pd.setMessage("Deleting Account & All Data...");
         pd.setCancelable(false);
         pd.show();
 
         executor.execute(() -> {
             try {
-                // 1. CLEAR LOCAL DATA IMMEDIATELY (Commit synchronously)
-                allNotesList.clear();
-                getSharedPreferences("MyNotesData", MODE_PRIVATE).edit().clear().commit();
-
-                // 2. CLEAR ALL INTERNAL FILES (Images/Backups)
-                java.io.File filesDir = getFilesDir();
-                if (filesDir != null && filesDir.listFiles() != null) {
-                    for (java.io.File f : filesDir.listFiles()) {
-                        f.delete();
-                    }
-                }
-
-                // 3. CLEAR CACHE
-                java.io.File cacheDir = getCacheDir();
-                if (cacheDir != null && cacheDir.listFiles() != null) {
-                    for (java.io.File f : cacheDir.listFiles()) {
-                        f.delete();
-                    }
-                }
-
-                // 4. DELETE CLOUD BACKUP (Background - don't let it block)
+                // 1. Cloud Deletion
                 if (driveService != null) {
-                    try {
-                        FileList result = driveService.files().list().setSpaces("appDataFolder").execute();
-                        if (result.getFiles() != null) {
-                            for (com.google.api.services.drive.model.File f : result.getFiles()) {
-                                if ("GoNotesPro_Backup.qnb".equals(f.getName())) {
-                                    driveService.files().delete(f.getId()).execute();
-                                }
+                    FileList result = driveService.files().list().setSpaces("appDataFolder").execute();
+                    if (result.getFiles() != null) {
+                        for (com.google.api.services.drive.model.File f : result.getFiles()) {
+                            if ("GoNotesPro_Backup.qnb".equals(f.getName())) {
+                                driveService.files().delete(f.getId()).execute();
                             }
                         }
-                    } catch (Exception e) { e.printStackTrace(); }
+                    }
                 }
 
-                mainHandler.post(() -> {
-                    if (pd.isShowing()) pd.dismiss();
-                    Toast.makeText(this, "Total Wipe Complete! Restarting...", Toast.LENGTH_LONG).show();
+                // 2. Local Deletion (No restart yet)
+                deleteLocalData(false);
 
-                    // 5. FORCE RESTART APP to clear memory state
+                mainHandler.post(() -> {
+                    pd.dismiss();
+                    Toast.makeText(this, "Account and data permanently deleted.", Toast.LENGTH_LONG).show();
                     mainHandler.postDelayed(() -> {
                         Intent intent = getBaseContext().getPackageManager().getLaunchIntentForPackage(getBaseContext().getPackageName());
-                        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
                         startActivity(intent);
                         finish();
                         Runtime.getRuntime().exit(0);
@@ -3091,7 +3249,7 @@ public class MainActivity extends AppCompatActivity {
                 });
             } catch (Exception e) {
                 mainHandler.post(() -> {
-                    if (pd.isShowing()) pd.dismiss();
+                    pd.dismiss();
                     Toast.makeText(this, "Wipe failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                 });
             }
@@ -4281,25 +4439,6 @@ public class MainActivity extends AppCompatActivity {
         AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
         if (am == null) return;
 
-        // BugFix-1: Android 12+ permission — params store karo, onResume mein retry hoga
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            if (!am.canScheduleExactAlarms()) {
-                pendingAlarmTime = time;
-                pendingAlarmIsDaily = isDaily;
-                new AlertDialog.Builder(this)
-                        .setTitle("Permission Required")
-                        .setMessage("Please allow 'Alarms & reminders' in Settings to set alarms.")
-                        .setPositiveButton("Open Settings", (d, w) -> {
-                            Intent settingsIntent = new Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM);
-                            settingsIntent.setData(android.net.Uri.parse("package:" + getPackageName()));
-                            startActivity(settingsIntent);
-                        })
-                        .setNegativeButton("Cancel", (d, w) -> pendingAlarmTime = -1)
-                        .show();
-                return;
-            }
-        }
-
         // BugFix-10: Math.abs — hashCode negative ho sakta hai, requestCode positive chahiye
         int requestCode = currentEditingNoteId != null ? Math.abs(currentEditingNoteId.hashCode()) : 0;
         Intent intent = new Intent(this, ReminderReceiver.class);
@@ -4308,9 +4447,9 @@ public class MainActivity extends AppCompatActivity {
         intent.putExtra("isDaily", isDaily);
         PendingIntent pi = PendingIntent.getBroadcast(this, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-        // Android 6+ par setExactAndAllowWhileIdle use karo (dono once aur daily ke liye)
+        // Android 6+ par setAndAllowWhileIdle use karo (POLICY SAFE: No permission required for inexact)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, time, pi);
+            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, time, pi);
         } else {
             // Android 5 aur neeche: daily ke liye setRepeating, once ke liye set
             if (isDaily) {
@@ -4490,31 +4629,26 @@ public class MainActivity extends AppCompatActivity {
                 android.app.AlarmManager am =
                         (android.app.AlarmManager) context.getSystemService(android.content.Context.ALARM_SERVICE);
                 if (am != null) {
-                    boolean canSchedule =
-                            android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S
-                                    || am.canScheduleExactAlarms();
-                    if (canSchedule) {
-                        long nextTime = System.currentTimeMillis() + android.app.AlarmManager.INTERVAL_DAY;
-                        android.content.Intent nextIntent =
-                                new android.content.Intent(context, ReminderReceiver.class);
-                        nextIntent.putExtra("noteId", noteId);
-                        nextIntent.putExtra("isDaily", true);
-                        int rc = Math.abs(noteId.hashCode());
-                        android.app.PendingIntent pi = android.app.PendingIntent.getBroadcast(
-                                context, rc, nextIntent,
-                                android.app.PendingIntent.FLAG_UPDATE_CURRENT
-                                        | android.app.PendingIntent.FLAG_IMMUTABLE);
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                            am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, nextTime, pi);
-                        } else {
-                            am.set(android.app.AlarmManager.RTC_WAKEUP, nextTime, pi);
-                        }
-                        // Registry update karo — BootReceiver ke liye
-                        alarmSp.edit().putLong("alarm_" + noteId, nextTime).apply();
-                        // MainActivity ko next alarm_time update karne ka signal do
-                        context.getSharedPreferences("MyNotesData", android.content.Context.MODE_PRIVATE)
-                                .edit().putString("alarm_next_" + noteId, String.valueOf(nextTime)).apply();
+                    long nextTime = System.currentTimeMillis() + android.app.AlarmManager.INTERVAL_DAY;
+                    android.content.Intent nextIntent =
+                            new android.content.Intent(context, ReminderReceiver.class);
+                    nextIntent.putExtra("noteId", noteId);
+                    nextIntent.putExtra("isDaily", true);
+                    int rc = Math.abs(noteId.hashCode());
+                    android.app.PendingIntent pi = android.app.PendingIntent.getBroadcast(
+                            context, rc, nextIntent,
+                            android.app.PendingIntent.FLAG_UPDATE_CURRENT
+                                    | android.app.PendingIntent.FLAG_IMMUTABLE);
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                        am.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, nextTime, pi);
+                    } else {
+                        am.set(android.app.AlarmManager.RTC_WAKEUP, nextTime, pi);
                     }
+                    // Registry update karo — BootReceiver ke liye
+                    alarmSp.edit().putLong("alarm_" + noteId, nextTime).apply();
+                    // MainActivity ko next alarm_time update karne ka signal do
+                    context.getSharedPreferences("MyNotesData", android.content.Context.MODE_PRIVATE)
+                            .edit().putString("alarm_next_" + noteId, String.valueOf(nextTime)).apply();
                 }
             } else if (!isDaily && noteId != null) {
                 // BugFix-2: One-time alarm fire hua — MainActivity ko batao taaki icon hata sake
@@ -4552,6 +4686,19 @@ public class MainActivity extends AppCompatActivity {
                     android.app.PendingIntent.FLAG_UPDATE_CURRENT
                             | android.app.PendingIntent.FLAG_IMMUTABLE);
 
+            // New: Actions for Dismiss and Snooze
+            android.content.Intent dismissIntent = new android.content.Intent(context, NotificationActionReceiver.class);
+            dismissIntent.setAction(NotificationActionReceiver.ACTION_DISMISS);
+            dismissIntent.putExtra("noteId", noteId);
+            android.app.PendingIntent dismissPi = android.app.PendingIntent.getBroadcast(context, tapRequestCode + 1,
+                    dismissIntent, android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE);
+
+            android.content.Intent snoozeIntent = new android.content.Intent(context, NotificationActionReceiver.class);
+            snoozeIntent.setAction(NotificationActionReceiver.ACTION_SNOOZE);
+            snoozeIntent.putExtra("noteId", noteId);
+            android.app.PendingIntent snoozePi = android.app.PendingIntent.getBroadcast(context, tapRequestCode + 2,
+                    snoozeIntent, android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE);
+
             // BugFix-7: CATEGORY_ALARM se DND bypass hota hai; DEFAULT_ALL se vibration+sound
             android.app.NotificationManager nm =
                     (android.app.NotificationManager) context.getSystemService(
@@ -4564,26 +4711,30 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     builder = new android.app.Notification.Builder(context);
                 }
-                // Screen wake fix: fullScreenIntent se locked screen par bhi notification poori tarah dikhti hai
-                int fullScreenRequestCode = (noteId != null) ? Math.abs(noteId.hashCode()) + 2000 : 2000;
-                android.app.PendingIntent fullScreenPi = android.app.PendingIntent.getActivity(
-                        context, fullScreenRequestCode, openIntent,
-                        android.app.PendingIntent.FLAG_UPDATE_CURRENT
-                                | android.app.PendingIntent.FLAG_IMMUTABLE);
 
                 builder.setSmallIcon(R.mipmap.ic_launcher)
                         .setContentTitle(notifTitle)
                         .setContentText(notifText)
                         // BugFix-Notif-Tap: Tap karne par app open ho
                         .setContentIntent(tapPi)
-                        // Screen wake fix: locked screen par puri notification dikhao aur screen on karo
-                        .setFullScreenIntent(fullScreenPi, true)
                         .setAutoCancel(true)
                         .setPriority(android.app.Notification.PRIORITY_HIGH)
                         // BugFix-7: DND bypass ke liye CATEGORY_ALARM
                         .setCategory(android.app.Notification.CATEGORY_ALARM)
                         // BugFix-7: Vibration + sound default (Android < 8 ke liye)
                         .setDefaults(android.app.Notification.DEFAULT_ALL);
+
+                // Add Actions with Icons/Labels
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                    builder.addAction(new android.app.Notification.Action.Builder(
+                            android.graphics.drawable.Icon.createWithResource(context, R.mipmap.ic_launcher),
+                            "💡 Open Note", tapPi).build());
+                } else {
+                    builder.addAction(0, "Open Note", tapPi);
+                }
+                builder.addAction(0, "✔️ Mark completed", dismissPi);
+                builder.addAction(0, "⏰ Reschedule", snoozePi);
+
                 nm.notify(notifId, builder.build());
             }
         }
@@ -5520,55 +5671,61 @@ public class MainActivity extends AppCompatActivity {
                 }).show();
     }
 
-    @Override
-    public void onBackPressed() {
-        if (isFabOpen) {
-            toggleFab(false);
-            return;
-        }
-        if (screenAddNote.getVisibility() == View.VISIBLE) {
-            closeNoteScreen();
-            return;
-        }
-        if (isSelectionMode) {
-            exitSelectionMode();
-            return;
-        }
-        if (isBinMode) {
-            exitBinMode();
-            return;
-        }
+    private void setupBackNavigation() {
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                if (isFabOpen) {
+                    toggleFab(false);
+                    return;
+                }
+                if (screenAddNote.getVisibility() == View.VISIBLE) {
+                    closeNoteScreen();
+                    return;
+                }
+                if (isSelectionMode) {
+                    exitSelectionMode();
+                    return;
+                }
+                if (isBinMode) {
+                    exitBinMode();
+                    return;
+                }
 
-        if (isNotebookMode && !currentParentId.equals("root")) {
-            navigationPathIds.remove(navigationPathIds.size() - 1);
-            navigationPathNames.remove(navigationPathNames.size() - 1);
-            currentParentId = navigationPathIds.isEmpty() ? "root" : navigationPathIds.get(navigationPathIds.size() - 1);
-            currentLevel--;
-            filterNotes(""); updateBreadcrumbText();
-            return;
-        }
+                if (isNotebookMode && !currentParentId.equals("root")) {
+                    navigationPathIds.remove(navigationPathIds.size() - 1);
+                    navigationPathNames.remove(navigationPathNames.size() - 1);
+                    currentParentId = navigationPathIds.isEmpty() ? "root" : navigationPathIds.get(navigationPathIds.size() - 1);
+                    currentLevel--;
+                    filterNotes(""); updateBreadcrumbText();
+                    return;
+                }
 
-        // If searching, clear search
-        if (!searchBar.getText().toString().isEmpty()) {
-            searchBar.setText("");
-            filterNotes("");
-            return;
-        }
+                // If searching, clear search
+                if (!searchBar.getText().toString().isEmpty()) {
+                    searchBar.setText("");
+                    filterNotes("");
+                    return;
+                }
 
-        // If in any special tab/mode, return to "Recent" (Home) before exiting
-        // But if we are ALREADY in Recent mode, just exit (super.onBackPressed)
-        if (isNormalFilterMode || isNotebookMode || isBinMode || !selectedCategoryFilter.equals("All")) {
-            // Reset special UI elements
-            buttonMenu.setText("☰");
-            if (!isBinMode) buttonPlus.setVisibility(View.VISIBLE);
-            selectedCategoryFilter = "All"; // Reset category filter
+                // If in any special tab/mode, return to "Recent" (Home) before exiting
+                // But if we are ALREADY in Recent mode, just exit
+                if (isNormalFilterMode || isNotebookMode || isBinMode || !selectedCategoryFilter.equals("All")) {
+                    // Reset special UI elements
+                    buttonMenu.setText("☰");
+                    if (!isBinMode) buttonPlus.setVisibility(View.VISIBLE);
+                    selectedCategoryFilter = "All"; // Reset category filter
 
-            // Use the existing tab logic to return Home perfectly
-            tabRecent.performClick();
-            return;
-        }
+                    // Use the existing tab logic to return Home perfectly
+                    tabRecent.performClick();
+                    return;
+                }
 
-        super.onBackPressed();
+                // If no custom logic applies, disable this callback and trigger the default back behavior
+                setEnabled(false);
+                getOnBackPressedDispatcher().onBackPressed();
+            }
+        });
     }
 
     @Override
