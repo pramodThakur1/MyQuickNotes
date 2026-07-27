@@ -201,10 +201,6 @@ public class MainActivity extends AppCompatActivity {
     private static final int NOTIFICATION_PERMISSION_REQUEST = 201;
     private String pendingCameraPhotoPath;
 
-    // BugFix-1: Android 12+ permission retry ke liye pending alarm data
-    private long pendingAlarmTime = -1;
-    private boolean pendingAlarmIsDaily = false;
-
     // BugFix-Notif-Tap: Notification se aaya noteId — notes load hone ke baad open hoga
     private String pendingOpenNoteId = null;
 
@@ -4486,7 +4482,6 @@ public class MainActivity extends AppCompatActivity {
             alarmEditor.apply();
         }
 
-        pendingAlarmTime = -1; // pending clear karo agar retry se aaya tha
         Toast.makeText(this, isDaily ? "Daily reminder set!" : "One-time reminder set!", Toast.LENGTH_SHORT).show();
     }
 
@@ -5761,22 +5756,6 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         if (dailyChanged) { saveNotesToStorage(); } // notifyDataSetChanged inside saveNotesToStorage covers UI update
-
-        // BugFix-1: User Settings se wapas aaya — pending alarm retry karo
-        if (pendingAlarmTime != -1) {
-            AlarmManager _am = (AlarmManager) getSystemService(ALARM_SERVICE);
-            if (_am != null) {
-                boolean canSchedule =
-                        android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S
-                                || _am.canScheduleExactAlarms();
-                if (canSchedule) {
-                    long _t = pendingAlarmTime;
-                    boolean _daily = pendingAlarmIsDaily;
-                    pendingAlarmTime = -1;
-                    setAlarm(_t, _daily);
-                }
-            }
-        }
     }
 
     protected void onStop() {
