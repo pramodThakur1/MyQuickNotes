@@ -3095,40 +3095,12 @@ public class MainActivity extends AppCompatActivity {
         title.setTextColor(ContextCompat.getColor(this, R.color.primaryTextColor));
         container.addView(title);
 
-        container.addView(createMenuItem("🔌", "Disconnect Google Drive", v -> { dialog.dismiss(); performLogout(); }));
-        container.addView(createMenuItem("☁️", "Delete Cloud Backup", v -> { dialog.dismiss(); confirmCloudDelete(); }));
-        container.addView(createMenuItem("📱", "Delete Local Notes", v -> { dialog.dismiss(); confirmLocalDelete(); }));
-        container.addView(createMenuItem("🔴", "Delete Account & Data", v -> { dialog.dismiss(); confirmAdvancedDelete(); }));
-
-        TextView webInfo = new TextView(this);
-        webInfo.setText("\nTo request account deletion from a web browser, visit: nishuapps.com/delete-account");
-        webInfo.setTextSize(12);
-        webInfo.setPadding(30, 20, 30, 0);
-        webInfo.setTextColor(ContextCompat.getColor(this, R.color.secondaryTextColor));
-        container.addView(webInfo);
+        container.addView(createMenuItem("🗑️", "Delete Local & Cloud Data", v -> { dialog.dismiss(); confirmAdvancedDelete(); }));
 
         dialog.setContentView(container);
         dialog.getWindow().setLayout((int)(getResources().getDisplayMetrics().widthPixels * 0.85), ViewGroup.LayoutParams.WRAP_CONTENT);
         dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         dialog.show();
-    }
-
-    private void confirmCloudDelete() {
-        new AlertDialog.Builder(this)
-                .setTitle("Delete Cloud Backup")
-                .setMessage("Are you sure you want to delete your backup from Google Drive? This will not affect local notes.")
-                .setPositiveButton("Delete Backup", (d, w) -> deleteCloudBackup())
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    private void confirmLocalDelete() {
-        new AlertDialog.Builder(this)
-                .setTitle("Delete Local Notes")
-                .setMessage("Are you sure you want to delete all notes from this device? Cloud backups will remain safe.")
-                .setPositiveButton("Delete Local", (d, w) -> deleteLocalData(true))
-                .setNegativeButton("Cancel", null)
-                .show();
     }
 
     private void deleteCloudBackup() {
