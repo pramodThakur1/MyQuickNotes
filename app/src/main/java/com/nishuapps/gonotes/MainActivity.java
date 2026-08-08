@@ -2423,6 +2423,21 @@ public class MainActivity extends AppCompatActivity {
         isCurrentNotePinned = "true".equals(n.get("isPinned"));
         isCurrentNoteLocked = "true".equals(n.get("isLocked"));
         currentNotePin = n.get("pin") != null ? n.get("pin") : "";
+        // Restore the note's stored color into the editor. Without this, currentNoteColor
+        // stays "default" after Activity recreation/app restart, so the editor background
+        // loses the saved color even though the note's "color" field is persisted correctly.
+        currentNoteColor = n.get("color") != null ? n.get("color") : "default";
+        if (!currentNoteColor.equals("default") && !currentNoteColor.isEmpty()
+                && !currentNoteColor.equals("#121212") && !currentNoteColor.equals("#FFFFFF")) {
+            try {
+                screenAddNote.setBackgroundColor(Color.parseColor(currentNoteColor));
+            } catch (Exception e) {
+                // Invalid stored color — fall back to default editor background.
+                screenAddNote.setBackgroundColor(ContextCompat.getColor(this, R.color.backgroundColor));
+            }
+        } else {
+            screenAddNote.setBackgroundColor(ContextCompat.getColor(this, R.color.backgroundColor));
+        }
         updateEditorToolbarIcons();
 
         screenList.setVisibility(View.GONE);
@@ -4435,8 +4450,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showColorPicker() {
-        final String[] colors = {"#121212", "#FF5555", "#55FF55", "#5555FF", "#FFFF55", "#FF55FF", "#55FFFF"};
-        final String[] names = {"Default", "Red", "Green", "Blue", "Yellow", "Pink", "Cyan"};
+        final String[] colors = {"#121212", "#FF5555", "#5555FF", "#FF55FF"};
+        final String[] names = {"Default", "Red", "Blue", "Pink"};
 
         new AlertDialog.Builder(this)
                 .setTitle("Pick Note Color")
