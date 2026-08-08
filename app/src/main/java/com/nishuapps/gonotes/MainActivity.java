@@ -63,7 +63,9 @@ import androidx.activity.EdgeToEdge;
 import androidx.activity.OnBackPressedCallback;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.biometric.BiometricManager;
@@ -122,7 +124,6 @@ import com.nishuapps.gonotes.ZoomableImageView;
 import com.nishuapps.gonotes.NoteImagesAdapter;
 
 import javax.crypto.Cipher;
-import javax.crypto.CipherInputStream;
 import javax.crypto.CipherOutputStream;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
@@ -134,12 +135,47 @@ import java.security.Key;
 import com.scottyab.rootbeer.RootBeer;
 
 public class MainActivity extends AppCompatActivity {
+    // TEMP-DEBUG: NoteDupDebug diagnostic logging (investigation only; remove after analysis)
+    private static final String NOTE_DUP_TAG = "NoteDupDebug";
+    private String noteDupState(String event) {
+        return "event=" + event
+                + " activity=" + Integer.toHexString(System.identityHashCode(this))
+                + " currentEditingNoteId=" + currentEditingNoteId
+                + " editorVisible=" + (screenAddNote == null ? "null" : (screenAddNote.getVisibility() == View.VISIBLE))
+                + " title=" + (editTitle == null ? "null" : editTitle.getText().toString())
+                + " bodyLen=" + (editNoteBody == null ? -1 : editNoteBody.getText().length())
+                + " allNotesListSize=" + allNotesList.size()
+                + " displayedNotesListSize=" + displayedNotesList.size()
+                + " ts=" + System.currentTimeMillis();
+    }
+    private void noteDupLog(String event) {
+        android.util.Log.d(NOTE_DUP_TAG, noteDupState(event));
+    }
+    private void noteDupLog(String event, String extra) {
+        android.util.Log.d(NOTE_DUP_TAG, noteDupState(event) + " " + extra);
+    }
     // SECURE DUAL-KEY ARCHITECTURE (Resolves Login Deadlock vs VAPT Score)
     private static final String MASTER_KEY_ALIAS = "MyNotesMasterKey"; // For Notes (Sakt Lock)
     private static final String METADATA_KEY_ALIAS = "AppMetadataKey"; // For Email/Paths (Fast Lock)
     private static final String ALGO_GCM = "AES/GCM/NoPadding";
     private static final int TAG_LENGTH = 128;
     private static final int IV_LENGTH = 12;
+
+    // === GOOGLE DRIVE BACKUP CRYPTO v2 ===
+    // Random 256-bit Backup Master Key (AES-256-GCM) encrypts the payload.
+    // The Master Key is wrapped with a KEK derived from (Google Account ID + random salt)
+    // via PBKDF2-HMAC-SHA256. The salt is NOT secret and travels inside the backup file,
+    // so the backup restores on any new device with the same Google account. No password.
+    private static final String BACKUP_MAGIC = "QNB2";
+    private static final int BACKUP_FORMAT_VERSION = 2;   // payload zip layout version
+    private static final int BACKUP_CRYPTO_VERSION = 1;   // KDF/wrap/scheme version
+    private static final int BACKUP_SALT_LENGTH = 32;     // 16-32 bytes allowed; 32 used
+    private static final int BACKUP_MASTER_KEY_LENGTH = 32; // AES-256 master key bytes
+    private static final int BACKUP_KDF_ITERATIONS = 210000; // PBKDF2-HMAC-SHA256 (OWASP-level for SHA-256)
+    // Fixed header: magic(4) + formatVer(1) + cryptoVer(1) + reserved(4) + salt(32)
+    //             + wrapNonce(12) + wrappedKey(48) + dataNonce(12) = 114 bytes
+    private static final int BACKUP_HEADER_SIZE = 114;
+    private static final int BACKUP_WRAPPED_KEY_SIZE = 48; // 32 key + 16 tag (wrapNonce stored separately in header)
 
     private DrawerLayout drawerLayout;
     private TextView buttonMenu, menuBin, menuTheme, menuSettings, menuManageCategories, textCategoriesHeader, textLastSync, buttonToggleView, buttonSort, buttonEmptyBin, textEmptyState, textWordCount, textUserEmail, buttonLogout, buttonClearSearch;
@@ -172,7 +208,7 @@ public class MainActivity extends AppCompatActivity {
 
     private HorizontalScrollView layoutFormatBar;
     private Button btnH1, btnH2, btnBold, btnItalic, btnUnderline, btnClearToggles, btnCloseFormat;
-    private LinearLayout layoutSearchInNote, layoutNoteActions;
+    private LinearLayout layoutSearchInNote, layoutNoteActions, layoutEditorBottomBar;
     private EditText editTitle, searchBar, editNoteBody, editSearchInNote;
     private TextView textTimestamp;
     private ListView listViewNotes;
@@ -187,7 +223,6 @@ public class MainActivity extends AppCompatActivity {
     private View buttonDeleteSelected;
     private boolean isSelectionMode = false;
     private final HashSet<String> selectedNoteIds = new HashSet<>();
-    private int lastSearchInNoteIndex = -1;
     private final ArrayList<Integer> searchInNoteMatchIndices = new ArrayList<>();
     private int currentSearchInNoteMatchPos = -1;
 
@@ -254,10 +289,18 @@ public class MainActivity extends AppCompatActivity {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable syncRunnable = this::performSyncInternal;
-    private final Runnable autoSaveRunnable = this::saveCurrentNote; // SECURE AUTO-SAVE (F-RealTime Fix)
+    private final Runnable autoSaveRunnable = () -> {
+        noteDupLog("autoSave-EXEC", "currentEditingNoteId=" + currentEditingNoteId
+                + " title=" + editTitle.getText().toString()
+                + " bodyLen=" + editNoteBody.getText().length());
+        saveCurrentNote();
+    }; // SECURE AUTO-SAVE (F-RealTime Fix)
 
     private GoogleSignInClient googleSignInClient;
     private Drive driveService;
+    // getId()==null restore fix: one-shot guard so restore prompts for sign-in once,
+    // retries once after sign-in, and never loops or silently dies.
+    private boolean restoreRetryPending = false;
 
     private final ActivityResultLauncher<Intent> pickImageLauncher = registerForActivityResult(
             new ActivityResultContracts.StartActivityForResult(),
@@ -418,6 +461,8 @@ public class MainActivity extends AppCompatActivity {
                     // DEBUG: Show why login launcher failed/canceled (F-Login Fix)
                     String msg = "Login Result: " + (result.getResultCode() == Activity.RESULT_CANCELED ? "CANCELED" : "CODE " + result.getResultCode());
                     Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
+                    // Restore retry: sign-in was cancelled — give up this attempt (never loop).
+                    restoreRetryPending = false;
                 }
             }
     );
@@ -427,6 +472,10 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        noteDupLog("onCreate", "savedInstanceState=" + (savedInstanceState != null)
+                + " saved_draft_title=" + (savedInstanceState != null ? savedInstanceState.getString("draft_title") : "null")
+                + " saved_draft_bodyLen=" + (savedInstanceState != null && savedInstanceState.getString("draft_body") != null ? savedInstanceState.getString("draft_body").length() : -1)
+                + " saved_currentEditingNoteId=" + (savedInstanceState != null ? savedInstanceState.getString("currentEditingNoteId") : "null"));
         EdgeToEdge.enable(this);
         // FIX: Startup mein stale temp cache files delete karo.
         // Crash ke baad drive_download.qnb jaise files cache mein permanently reh jaati hain.
@@ -537,43 +586,34 @@ public class MainActivity extends AppCompatActivity {
         AppCompatDelegate.setDefaultNightMode(themeMode);
 
         super.onCreate(savedInstanceState);
+
+        // STATUS-BAR ICON APPEARANCE (targetSdk 36 / edge-to-edge): EdgeToEdge.enable()
+        // sets the appearance via WindowInsetsControllerCompat when it runs (line 449),
+        // which is BEFORE the saved theme is restored. Re-assert the appearance AFTER
+        // setDefaultNightMode()/super.onCreate() using the same authoritative API.
+        // Light theme -> DARK icons (isAppearanceLightStatusBars=true),
+        // Dark theme  -> WHITE icons (isAppearanceLightStatusBars=false).
+        WindowInsetsControllerCompat insetsController =
+                WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+        int uiNight2 = getResources().getConfiguration().uiMode
+                & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+        boolean isDarkUi2 = uiNight2 == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        insetsController.setAppearanceLightStatusBars(!isDarkUi2);
+
         checkAppResilience();
         setContentView(R.layout.activity_main);
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-            // BACKGROUND BLEED: Root layout ko padding nahi denge, sirf specific elements ko targets karenge.
+            int imeHeight = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom;
+
+            // BACKGROUND BLEED: Handle system bars and keyboard (IME)
+            // Global fix: Pad the root view by either the navigation bar or the keyboard
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, Math.max(systemBars.bottom, imeHeight));
             
-            // 1. Search Bar aur Selection Toolbar (Top)
-            View searchC = findViewById(R.id.searchContainer);
-            if (searchC != null) {
-                ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) searchC.getLayoutParams();
-                lp.topMargin = systemBars.top + (int)(16 * getResources().getDisplayMetrics().density);
-                searchC.setLayoutParams(lp);
-            }
-            View selectT = findViewById(R.id.layoutSelectionToolbar);
-            if (selectT != null) {
-                selectT.setPadding(selectT.getPaddingLeft(), systemBars.top, selectT.getPaddingRight(), selectT.getPaddingBottom());
-            }
-
-            // 2. Note Editor Toolbar (Top)
-            // screenAddNote ke pehle child (RelativeLayout) ko padding denge
-            if (screenAddNote != null && screenAddNote.getChildCount() > 0) {
-                View editorToolbar = screenAddNote.getChildAt(0);
-                editorToolbar.setPadding(editorToolbar.getPaddingLeft(), systemBars.top, editorToolbar.getPaddingRight(), editorToolbar.getPaddingBottom());
-            }
-
-            // 3. FAB (Plus Button) aur Selection Bottom Bar (Bottom)
-            if (buttonPlus != null) {
-                ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) buttonPlus.getLayoutParams();
-                lp.bottomMargin = systemBars.bottom + (int)(20 * getResources().getDisplayMetrics().density);
-                buttonPlus.setLayoutParams(lp);
-            }
-            View selectB = findViewById(R.id.layoutSelectionBottomBar);
-            if (selectB != null) {
-                selectB.setPadding(selectB.getPaddingLeft(), selectB.getPaddingTop(), selectB.getPaddingRight(), systemBars.bottom);
-            }
-
+            // Note: Since we are padding the root 'main' layout, child layouts like screenAddNote
+            // will automatically be pushed up by the keyboard height.
+            
             return insets;
         });
 
@@ -595,6 +635,10 @@ public class MainActivity extends AppCompatActivity {
 
         if (savedInstanceState != null) {
             pendingCameraPhotoPath = savedInstanceState.getString("pendingCameraPhotoPath");
+            // BugFix: Restore the editor identity across recreate() (theme toggle)
+            // so auto-save UPDATEBRANCHes the original note instead of NEWBRANCHing
+            // a duplicate. Must be set BEFORE loadNotesFromStorage()/draft restore.
+            currentEditingNoteId = savedInstanceState.getString("currentEditingNoteId");
             String draftTitle = savedInstanceState.getString("draft_title");
             String draftBody = savedInstanceState.getString("draft_body");
             if (draftTitle != null || draftBody != null) {
@@ -611,15 +655,25 @@ public class MainActivity extends AppCompatActivity {
         setupBackNavigation();
         loadNotesFromStorage();
         openPendingNoteIfAny();
+        noteDupLog("onCreate-afterLoad");
     }
 
     @Override
     protected void onSaveInstanceState(@androidx.annotation.NonNull android.os.Bundle outState) {
+        noteDupLog("onSaveInstanceState",
+                " editorVisible=" + (screenAddNote == null ? "null" : (screenAddNote.getVisibility() == View.VISIBLE))
+                + " savingDraft=" + (screenAddNote != null && screenAddNote.getVisibility() == View.VISIBLE)
+                + " draft_title=" + (editTitle == null ? "null" : editTitle.getText().toString())
+                + " draft_bodyLen=" + (editNoteBody == null ? -1 : editNoteBody.getText().length()));
         super.onSaveInstanceState(outState);
         // SECURE: Only use In-Memory bundle for temp paths (F-009 Fix)
         if (pendingCameraPhotoPath != null) {
             outState.putString("pending_camera_path", pendingCameraPhotoPath);
         }
+        // BugFix: Persist the current editor identity so a theme-toggle
+        // recreate() restores which note is being edited instead of resetting
+        // to null (which caused a NEWBRANCH duplicate on the next auto-save).
+        outState.putString("currentEditingNoteId", currentEditingNoteId);
 
         // Save current typing progress as a safety draft
         if (screenAddNote.getVisibility() == View.VISIBLE) {
@@ -751,6 +805,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupKeyboardListener() {
+        // Legacy listener for internal padding only (keeping cursor clear of the bar)
         final View activityRootView = findViewById(android.R.id.content);
         layoutListener = () -> {
             android.graphics.Rect r = new android.graphics.Rect();
@@ -758,19 +813,21 @@ public class MainActivity extends AppCompatActivity {
             int screenHeight = activityRootView.getRootView().getHeight();
             int keypadHeight = screenHeight - r.bottom;
 
-            if (keypadHeight > screenHeight * 0.15) { // Keyboard is open
-                if (!isKeyboardOpen) {
-                    isKeyboardOpen = true;
-                    // Standard padding to keep cursor visible,
-                    // but not too much to push the Title away.
-                    int padding = (int) (80 * getResources().getDisplayMetrics().density);
-                    editNoteBody.setPadding(0, 0, 0, padding);
-                }
+            if (keypadHeight > screenHeight * 0.15) {
+                isKeyboardOpen = true;
+                // Internal padding to keep text body visible above the formatting bar
+                int padding = (int) (60 * getResources().getDisplayMetrics().density);
+                editNoteBody.setPadding(0, 0, 0, padding);
+                // Editing: bottom action bar keyboard ke upar dikhe
+                if (layoutEditorBottomBar != null) layoutEditorBottomBar.setVisibility(View.VISIBLE);
             } else {
-                if (isKeyboardOpen) {
-                    isKeyboardOpen = false;
-                    editNoteBody.setPadding(0, 0, 0, 0);
-                }
+                isKeyboardOpen = false;
+                editNoteBody.setPadding(0, 0, 0, 0);
+                // Readable/View mode: keyboard band hai — formatting toolbar ko pura hide karo
+                // (Edit mode behavior bilkul unchanged rehta hai)
+                if (layoutFormatBar != null) layoutFormatBar.setVisibility(View.GONE);
+                // Readable mode: bottom action bar bhi chhup jaye (sirf editing ke waqt dikhe)
+                if (layoutEditorBottomBar != null) layoutEditorBottomBar.setVisibility(View.GONE);
             }
         };
         activityRootView.getViewTreeObserver().addOnGlobalLayoutListener(layoutListener);
@@ -826,6 +883,7 @@ public class MainActivity extends AppCompatActivity {
         buttonSearchInNote = findViewById(R.id.buttonSearchInNote);
         buttonMoreNote = findViewById(R.id.buttonMoreNote);
         layoutNoteActions = findViewById(R.id.layoutNoteActions);
+        layoutEditorBottomBar = findViewById(R.id.layoutEditorBottomBar);
         buttonMore = findViewById(R.id.buttonMore);
         buttonColor = findViewById(R.id.buttonColor);
         buttonFormat = findViewById(R.id.buttonFormat);
@@ -1037,7 +1095,11 @@ public class MainActivity extends AppCompatActivity {
                         .setMessage("To keep your notes safe on the cloud, please check the 'Google Drive' box during login.")
                         .setCancelable(false)
                         .setPositiveButton("Try Again", (dialog, which) -> requestSignIn())
-                        .setNegativeButton("Cancel", (dialog, which) -> googleSignInClient.signOut())
+                        .setNegativeButton("Cancel", (dialog, which) -> {
+                            googleSignInClient.signOut();
+                            // Restore retry: user cancelled the permission prompt — give up this attempt.
+                            restoreRetryPending = false;
+                        })
                         .show();
                 return;
             }
@@ -1046,6 +1108,8 @@ public class MainActivity extends AppCompatActivity {
             checkAccountMigration(account);
 
         } catch (com.google.android.gms.common.api.ApiException e) {
+            // Restore retry: sign-in failed — give up this attempt (never loop).
+            restoreRetryPending = false;
             // CRITICAL: Reveal the invisible error code (Finding F-Login Fix)
             int code = e.getStatusCode();
             String msg = "Login Blocked (Error " + code + ")";
@@ -1270,7 +1334,9 @@ public class MainActivity extends AppCompatActivity {
         executor.execute(() -> {
             try {
                 java.io.File tempFile = new java.io.File(getCacheDir(), "GoNotesPro_Backup.qnb");
-                performExportSyncWithKey(Uri.fromFile(tempFile), getAccountDerivedKey(accountId));
+                java.io.FileOutputStream fos = new java.io.FileOutputStream(tempFile);
+                performBackupExportV2(fos, accountId); // v2: random master key + account-derived KEK
+                fos.close();
 
                 File fileMetadata = new File().setName("GoNotesPro_Backup.qnb").setParents(java.util.Collections.singletonList("appDataFolder"));
                 FileContent mediaContent = new FileContent("application/octet-stream", tempFile);
@@ -1300,7 +1366,20 @@ public class MainActivity extends AppCompatActivity {
         if (driveService == null || executor.isShutdown()) return;
 
         final com.google.android.gms.auth.api.signin.GoogleSignInAccount account = com.google.android.gms.auth.api.signin.GoogleSignIn.getLastSignedInAccount(this);
-        if (account == null || account.getId() == null) return;
+        if (account == null || account.getId() == null) {
+            if (restoreRetryPending) {
+                // Retry already happened once: give up with a clear error (never loop).
+                restoreRetryPending = false;
+                Toast.makeText(this, "Restore failed: Google sign-in did not complete. Please sign in and try again.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            // Tell the user sign-in is required, then start the existing Google Sign-In flow.
+            Toast.makeText(this, "Google sign-in required to restore your backup.", Toast.LENGTH_SHORT).show();
+            restoreRetryPending = true;
+            requestSignIn();
+            return;
+        }
+        restoreRetryPending = false;
 
         executor.execute(() -> {
             try {
@@ -1320,14 +1399,11 @@ public class MainActivity extends AppCompatActivity {
                     // SECURE: Explicitly set private permissions (CWE-276 Fix)
                     tempFile.setReadable(true, true);
                     tempFile.setWritable(true, true);
-                    // ACCOUNT-DERIVED KEY FIX: Use account ID derived key (cross-device safe)
-                    final SecretKey accountKey = getAccountDerivedKey(account.getId());
+                    // v2: Master Key unwrapped with account-derived KEK inside performImportWithKey
+                    final String accountId = account.getId();
                     final java.io.File tempFileRef = tempFile;
                     mainHandler.post(() -> {
-                        // RACE CONDITION FIX: finally block yahan nahi hoga.
-                        // File background thread mein padhne ke BAAD delete hogi
-                        // (performImportWithKey ke andar — neeche dekho).
-                        performImportWithKey(Uri.fromFile(tempFileRef), accountKey, true);
+                        performImportWithKey(Uri.fromFile(tempFileRef), null, accountId);
                     });
                 } else {
                     mainHandler.post(() -> Toast.makeText(this, "No existing backup found on cloud.", Toast.LENGTH_LONG).show());
@@ -1514,55 +1590,50 @@ public class MainActivity extends AppCompatActivity {
 
     private void performImport(Uri uri) {
         try {
-            // Use MASTER key for import
-            performImportWithKey(uri, getOrCreateKey(MASTER_KEY_ALIAS, true), true);
+            // Use MASTER key for import (local backup)
+            performImportWithKey(uri, getOrCreateKey(MASTER_KEY_ALIAS, true), null);
         } catch (Exception e) { e.printStackTrace(); }
     }
 
-    // SECURE BACKUP IMPORT (Finding 001 Fix)
-    private void performImportWithKey(Uri uri, SecretKey key, boolean allowPasswordFallback) {
+    // SECURE BACKUP IMPORT (v2: Master-Key scheme for Drive; MASTER key for local file export)
+    private void performImportWithKey(Uri uri, SecretKey initialKey, String accountIdForRetry) {
         if (executor.isShutdown()) return;
         executor.execute(() -> {
             try {
                 InputStream is = getContentResolver().openInputStream(uri);
                 if (is == null) throw new Exception("Failed to open input stream");
 
-                // 1. Skip Random Signature (V3/V4 Format)
-                is.skip(16);
+                // Read entire file into memory for v2 header detection and decryption
+                java.io.ByteArrayOutputStream baosRaw = new java.io.ByteArrayOutputStream();
+                byte[] bufRaw = new byte[4096]; int lenRaw;
+                while ((lenRaw = is.read(bufRaw)) > 0) baosRaw.write(bufRaw, 0, lenRaw);
+                is.close();
+                byte[] fileBytes = baosRaw.toByteArray();
 
-                // 2. Read Version and Nonce
-                int version = is.read();
-                if (version != 3 && version != 4) {
-                    mainHandler.post(() -> Toast.makeText(this, "Incompatible backup version: " + version, Toast.LENGTH_SHORT).show());
-                    return;
+                byte[] decryptedBytes = null;
+
+                // --- STRATEGY 1: v2 Drive backup (QNB2 magic) -> account-derived KEK unwraps Master Key ---
+                if (fileBytes.length >= 4 && BACKUP_MAGIC.equals(
+                        new String(fileBytes, 0, 4, java.nio.charset.StandardCharsets.UTF_8))) {
+                    if (accountIdForRetry == null) throw new Exception("Backup requires Google account login to restore");
+                    decryptedBytes = performBackupRestoreV2(
+                            new java.io.ByteArrayInputStream(fileBytes), accountIdForRetry);
+                } else if (initialKey != null) {
+                    // --- STRATEGY 2: Legacy/local backup with the provided key (MASTER key) ---
+                    decryptedBytes = attemptDecryption(fileBytes, initialKey);
                 }
 
-                byte[] nonce = new byte[IV_LENGTH];
-                is.read(nonce);
-
-                Cipher cipher = Cipher.getInstance(ALGO_GCM);
-                cipher.init(Cipher.DECRYPT_MODE, key, new javax.crypto.spec.GCMParameterSpec(TAG_LENGTH, nonce));
-
-                // FIX BUG 4: CipherInputStream Android ka known bug hai — AES-GCM auth tag verify nahi karta
-                // Pehle saara encrypted data read karo, phir ek baar doFinal() karo taaki tampered data reject ho
-                java.io.ByteArrayOutputStream encBaos = new java.io.ByteArrayOutputStream();
-                byte[] tmpBuf = new byte[4096]; int tmpLen;
-                while ((tmpLen = is.read(tmpBuf)) > 0) encBaos.write(tmpBuf, 0, tmpLen);
-                is.close();
-
-                byte[] decryptedBytes;
-                try {
-                    decryptedBytes = cipher.doFinal(encBaos.toByteArray());
-                } catch (Exception e) {
-                    // Account key se decrypt fail — backup incompatible hai
+                if (decryptedBytes == null) {
+                    // All automatic attempts failed
                     mainHandler.post(() -> new AlertDialog.Builder(this)
                             .setTitle("Backup Incompatible")
-                            .setMessage("This backup cannot be restored. Please create a new backup from your current phone and try again.")
+                            .setMessage("This backup cannot be restored. It may have been created with a different account or a significantly older app version.")
                             .setPositiveButton("OK", null)
                             .show());
                     return;
                 }
 
+                // --- PROCEED WITH RESTORE ---
                 java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(
                         new java.io.ByteArrayInputStream(decryptedBytes));
                 java.util.zip.ZipEntry entry;
@@ -1697,7 +1768,23 @@ public class MainActivity extends AppCompatActivity {
                 });
             } catch (Exception e) {
                 e.printStackTrace();
-                mainHandler.post(() -> Toast.makeText(this, "Import failed: Check your Backup Password", Toast.LENGTH_LONG).show());
+                final String userMsg;
+                String msg = e.getMessage();
+                if (msg != null && msg.contains("account-derived key mismatch")) {
+                    userMsg = "Restore failed: This backup could not be decrypted. Please sign in with the same Google account that created the backup.";
+                } else if (msg != null && msg.contains("corrupted or incomplete")) {
+                    userMsg = "Restore failed: The backup data appears to be corrupted or incomplete. Please try downloading again.";
+                } else if (msg != null && msg.contains("Unsupported backup")) {
+                    userMsg = "Restore failed: " + msg;
+                } else if (msg != null && (msg.contains("too small") || msg.contains("truncated"))) {
+                    userMsg = "Restore failed: The backup file is incomplete.";
+                } else if (msg != null && msg.contains("Backup requires Google account login")) {
+                    userMsg = "Restore failed: Google sign-in is required to restore this backup.";
+                } else {
+                    userMsg = "Restore failed: Could not restore the backup. Please try again.";
+                }
+                final String finalUserMsg = userMsg;
+                mainHandler.post(() -> Toast.makeText(this, finalUserMsg, Toast.LENGTH_LONG).show());
             } finally {
                 // RACE CONDITION FIX: Drive se download ki gayi temp file ko
                 // background thread ke khatam hone ke BAAD delete karo.
@@ -1714,44 +1801,288 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    // ACCOUNT-DERIVED BACKUP KEY — Cross-device safe (Option 2 Fix)
-    // Key is derived from Google account numeric ID + package name via PBKDF2.
-    // Same Google account on any phone → same key → backup always restores.
-    private SecretKey getAccountDerivedKey(String accountId) throws Exception {
-        String input = accountId + getPackageName();
-        byte[] salt = "GoNotesAccountKeySalt_v1".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    // Helper: Tries to decrypt file data with both modern (skip 16) and legacy formats
+    private byte[] attemptDecryption(byte[] data, SecretKey key) {
+        // Try combinations: [Skip 16 bytes, No Skip]
+        boolean[] skipOptions = {true, false};
+        for (boolean skip : skipOptions) {
+            try {
+                java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(data);
+                if (skip) bais.skip(16);
+                
+                int version = bais.read();
+                if (version < 1 || version > 4) continue; // Basic sanity check
+
+                byte[] nonce = new byte[IV_LENGTH];
+                bais.read(nonce);
+
+                Cipher cipher = Cipher.getInstance(ALGO_GCM);
+                cipher.init(Cipher.DECRYPT_MODE, key, new javax.crypto.spec.GCMParameterSpec(TAG_LENGTH, nonce));
+
+                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                byte[] buf = new byte[4096]; int len;
+                while ((len = bais.read(buf)) > 0) baos.write(buf, 0, len);
+                
+                return cipher.doFinal(baos.toByteArray());
+            } catch (Exception ignored) {}
+        }
+        return null;
+    }
+
+    // === GOOGLE DRIVE BACKUP CRYPTO v2 — KEY DERIVATION & WRAPPING ===
+    // Chain: Google Account ID + random salt -> PBKDF2-HMAC-SHA256 -> KEK -> wraps Master Key.
+    // The account ID is never used directly as an AES key.
+
+    // Derives a 256-bit Key-Encryption-Key (KEK) from the Google account ID and a random salt.
+    // KDF: PBKDF2WithHmacSHA256, 210,000 iterations, 256-bit output (OWASP-recommended tier for SHA-256).
+    private SecretKey deriveKekFromAccountId(String accountId, byte[] salt) throws Exception {
+        if (accountId == null || accountId.isEmpty()) throw new Exception("Account ID missing for backup key derivation");
+        if (salt == null || salt.length < 16) throw new Exception("Backup salt too short");
         javax.crypto.spec.PBEKeySpec spec = new javax.crypto.spec.PBEKeySpec(
-                input.toCharArray(), salt, 65536, 256);
+                accountId.toCharArray(), salt, BACKUP_KDF_ITERATIONS, 256);
         javax.crypto.SecretKeyFactory factory = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
         byte[] keyBytes = factory.generateSecret(spec).getEncoded();
         spec.clearPassword();
         return new javax.crypto.spec.SecretKeySpec(keyBytes, "AES");
     }
 
-    // SECURE BACKUP KEY DERIVATION (F-Backup Fix — kept for legacy fallback)
-    private SecretKey getBackupKey() throws Exception {
-        KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
-        ks.load(null);
-        String BACKUP_SECRET_ALIAS = "BackupMasterSecret";
+    // Generates a fresh cryptographically secure 256-bit Backup Master Key.
+    private SecretKey generateBackupMasterKey() {
+        byte[] keyBytes = new byte[BACKUP_MASTER_KEY_LENGTH];
+        new java.security.SecureRandom().nextBytes(keyBytes);
+        return new javax.crypto.spec.SecretKeySpec(keyBytes, "AES");
+    }
 
-        if (!ks.containsAlias(BACKUP_SECRET_ALIAS)) {
-            // Generate a high-entropy, hardware-bound random secret
-            KeyGenerator kg = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                kg.init(new KeyGenParameterSpec.Builder(BACKUP_SECRET_ALIAS,
-                        KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
-                        .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                        .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                        .setRandomizedEncryptionRequired(true) // FIX: Randomized IV required
-                        .build());
+    // Wraps the Master Key with the KEK: AES-256-GCM, fresh random 12-byte nonce, AAD binds the header.
+    // Returns wrapNonce(12) || wrappedKey(32) || tag(16).
+    private byte[] wrapBackupMasterKey(SecretKey kek, SecretKey masterKey) throws Exception {
+        Cipher cipher = Cipher.getInstance(ALGO_GCM);
+        cipher.init(Cipher.ENCRYPT_MODE, kek);
+        byte[] wrapNonce = cipher.getIV();
+        byte[] aad = BACKUP_MAGIC.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        cipher.updateAAD(aad);
+        byte[] wrapped = cipher.doFinal(masterKey.getEncoded());
+        byte[] out = new byte[wrapNonce.length + wrapped.length];
+        System.arraycopy(wrapNonce, 0, out, 0, wrapNonce.length);
+        System.arraycopy(wrapped, 0, out, wrapNonce.length, wrapped.length);
+        return out;
+    }
+
+    // Unwraps the Master Key using the KEK. GCM tag failure = corrupted/tampered/wrong-account -> exception.
+    private SecretKey unwrapBackupMasterKey(SecretKey kek, byte[] wrapNonce, byte[] wrappedKey) throws Exception {
+        Cipher cipher = Cipher.getInstance(ALGO_GCM);
+        cipher.init(Cipher.DECRYPT_MODE, kek, new GCMParameterSpec(TAG_LENGTH, wrapNonce));
+        byte[] aad = BACKUP_MAGIC.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        cipher.updateAAD(aad);
+        byte[] keyBytes = cipher.doFinal(wrappedKey);
+        return new javax.crypto.spec.SecretKeySpec(keyBytes, "AES");
+    }
+
+    // Full header: magic(4) + formatVer(1) + cryptoVer(1) + reserved(4) + salt(32)
+    //            + wrapNonce(12) + wrappedKey(48) + dataNonce(12) = 114 bytes
+    private byte[] buildBackupHeader(byte[] salt, byte[] wrapNonce, byte[] wrappedKey, byte[] dataNonce) throws Exception {
+        if (wrappedKey.length != BACKUP_WRAPPED_KEY_SIZE) throw new Exception("Unexpected wrapped key size");
+        byte[] header = new byte[BACKUP_HEADER_SIZE];
+        System.arraycopy(BACKUP_MAGIC.getBytes(java.nio.charset.StandardCharsets.UTF_8), 0, header, 0, 4);
+        header[4] = (byte) BACKUP_FORMAT_VERSION;
+        header[5] = (byte) BACKUP_CRYPTO_VERSION;
+        // header[6..9] reserved (zeros)
+        System.arraycopy(salt, 0, header, 10, salt.length);
+        System.arraycopy(wrapNonce, 0, header, 42, wrapNonce.length);
+        System.arraycopy(wrappedKey, 0, header, 54, wrappedKey.length);
+        System.arraycopy(dataNonce, 0, header, 102, dataNonce.length);
+        return header;
+    }
+
+    // Parses the header and returns {salt, wrapNonce, wrappedKey, dataNonce, formatVer, cryptoVer}.
+    // Throws on bad magic, unsupported versions, or truncated data — restore rejects without touching the cloud copy.
+    private java.util.HashMap<String, Object> parseBackupHeader(byte[] header) throws Exception {
+        if (header.length < BACKUP_HEADER_SIZE) throw new Exception("Backup file too small or truncated");
+        String magic = new String(header, 0, 4, java.nio.charset.StandardCharsets.UTF_8);
+        if (!BACKUP_MAGIC.equals(magic)) throw new Exception("Not a GoNotesPro v2 backup file");
+        int formatVer = header[4] & 0xFF;
+        int cryptoVer = header[5] & 0xFF;
+        // Format version: allow current OR older backups (backward compatible); reject only newer/future formats.
+        // Crypto version stays strict — a newer app cannot decrypt an unknown crypto scheme.
+        if (formatVer > BACKUP_FORMAT_VERSION) throw new Exception("Unsupported backup format version: " + formatVer);
+        if (cryptoVer != BACKUP_CRYPTO_VERSION) throw new Exception("Unsupported backup crypto version: " + cryptoVer);
+        java.util.HashMap<String, Object> parsed = new java.util.HashMap<>();
+        byte[] salt = new byte[BACKUP_SALT_LENGTH];
+        System.arraycopy(header, 10, salt, 0, BACKUP_SALT_LENGTH);
+        byte[] wrapNonce = new byte[IV_LENGTH];
+        System.arraycopy(header, 42, wrapNonce, 0, IV_LENGTH);
+        byte[] wrappedKey = new byte[BACKUP_WRAPPED_KEY_SIZE];
+        System.arraycopy(header, 54, wrappedKey, 0, BACKUP_WRAPPED_KEY_SIZE);
+        byte[] dataNonce = new byte[IV_LENGTH];
+        System.arraycopy(header, 102, dataNonce, 0, IV_LENGTH);
+        parsed.put("salt", salt);
+        parsed.put("wrapNonce", wrapNonce);
+        parsed.put("wrappedKey", wrappedKey);
+        parsed.put("dataNonce", dataNonce);
+        parsed.put("formatVer", formatVer);
+        parsed.put("cryptoVer", cryptoVer);
+        return parsed;
+    }
+
+    // === GOOGLE DRIVE BACKUP CRYPTO v2 — EXPORT (ENCRYPT) ===
+    // Builds a v2 backup into `os`: header + AES-256-GCM encrypted zip (data.json + images).
+    // On ANY crypto failure this throws -> caller aborts the upload; no plaintext/partial backup is ever written.
+    private void performBackupExportV2(OutputStream os, String accountId) throws Exception {
+        SecretKey masterKey = generateBackupMasterKey();
+        byte[] salt = new byte[BACKUP_SALT_LENGTH];
+        new java.security.SecureRandom().nextBytes(salt);
+        SecretKey kek = deriveKekFromAccountId(accountId, salt);
+
+        byte[] wrapNonce;
+        Cipher wrapCipher = Cipher.getInstance(ALGO_GCM);
+        wrapCipher.init(Cipher.ENCRYPT_MODE, kek);
+        wrapNonce = wrapCipher.getIV(); // Cipher-generated IV — the one actually used
+        wrapCipher.updateAAD(BACKUP_MAGIC.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        byte[] wrappedKey = wrapCipher.doFinal(masterKey.getEncoded()); // 48 bytes: key + tag
+
+        byte[] dataNonce = new byte[IV_LENGTH];
+        new java.security.SecureRandom().nextBytes(dataNonce);
+        Cipher dataCipher = Cipher.getInstance(ALGO_GCM);
+        dataCipher.init(Cipher.ENCRYPT_MODE, masterKey, new GCMParameterSpec(TAG_LENGTH, dataNonce));
+
+        byte[] header = buildBackupHeader(salt, wrapNonce, wrappedKey, dataNonce);
+        os.write(header);
+        os.flush();
+
+        CipherOutputStream cos = new CipherOutputStream(os, dataCipher);
+        ZipOutputStream zos = new ZipOutputStream(cos);
+        try {
+            SharedPreferences sp = getSharedPreferences("MyNotesData", MODE_PRIVATE);
+
+            // Use secure notes for export
+            String secureNotes = sp.getString("notes_json_secure", "[]");
+            JSONArray notesArray;
+            if (secureNotes.startsWith("[")) {
+                notesArray = new JSONArray(secureNotes);
             } else {
-                kg.init(256);
+                // Decrypt current secure data to export as plain JSON inside the ZIP
+                byte[] combined = android.util.Base64.decode(secureNotes, android.util.Base64.DEFAULT);
+                byte[] ivS = new byte[IV_LENGTH];
+                byte[] enc = new byte[combined.length - IV_LENGTH];
+                System.arraycopy(combined, 0, ivS, 0, IV_LENGTH);
+                System.arraycopy(combined, IV_LENGTH, enc, 0, enc.length);
+                Cipher cS = Cipher.getInstance(ALGO_GCM);
+                cS.init(Cipher.DECRYPT_MODE, getOrCreateKey(MASTER_KEY_ALIAS, true), new javax.crypto.spec.GCMParameterSpec(TAG_LENGTH, ivS));
+                notesArray = new JSONArray(new String(cS.doFinal(enc), java.nio.charset.StandardCharsets.UTF_8));
             }
-            kg.generateKey();
+
+            // SECURE CATEGORIES EXPORT (Finding 015 Fix)
+            // Fetch categories from encrypted storage instead of deleted plaintext key
+            String secureCats = sp.getString("categories_list_secure", "[]");
+            JSONArray catsArray;
+            if (secureCats.startsWith("[")) {
+                catsArray = new JSONArray(secureCats);
+            } else {
+                byte[] combinedC = android.util.Base64.decode(secureCats, android.util.Base64.DEFAULT);
+                byte[] ivC = new byte[IV_LENGTH];
+                byte[] encC = new byte[combinedC.length - IV_LENGTH];
+                System.arraycopy(combinedC, 0, ivC, 0, IV_LENGTH);
+                System.arraycopy(combinedC, IV_LENGTH, encC, 0, encC.length);
+                Cipher cC = Cipher.getInstance(ALGO_GCM);
+                cC.init(Cipher.DECRYPT_MODE, getOrCreateKey(MASTER_KEY_ALIAS, true), new javax.crypto.spec.GCMParameterSpec(TAG_LENGTH, ivC));
+                catsArray = new JSONArray(new String(cC.doFinal(encC), java.nio.charset.StandardCharsets.UTF_8));
+            }
+
+            // FIX A: Backup mein image paths plain save karo (device key se independent)
+            // Taaki restore ke waqt different device key se decrypt fail na ho
+            for (int ni = 0; ni < notesArray.length(); ni++) {
+                try {
+                    JSONObject note = notesArray.getJSONObject(ni);
+                    String imgsJson = note.optString("images", "");
+                    if (!imgsJson.isEmpty() && !imgsJson.equals("[]") && !imgsJson.equals("null")) {
+                        JSONArray imgArr = new JSONArray(imgsJson);
+                        JSONArray plainArr = new JSONArray();
+                        for (int ii = 0; ii < imgArr.length(); ii++) {
+                            String p = imgArr.getString(ii);
+                            String plain = decryptImagePath(p); // ENC:xxx -> plain path
+                            plainArr.put(plain != null ? plain : p); // null pe fallback: as-is
+                        }
+                        note.put("images", plainArr.toString());
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            JSONObject obj = new JSONObject();
+            obj.put("notes", notesArray);
+            obj.put("categories", catsArray);
+            obj.put("categories_modified_at", sp.getLong("categories_modified_at", 0));
+
+            zos.putNextEntry(new java.util.zip.ZipEntry("data.json"));
+            zos.write(obj.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            zos.closeEntry();
+
+            java.io.File imagesDir = new java.io.File(getFilesDir(), "images");
+            java.io.File[] files = imagesDir.listFiles();
+            if (files != null) {
+                for (java.io.File f : files) {
+                    if (f.getName().endsWith(".webp") || f.getName().endsWith(".jpg")) {
+                        zos.putNextEntry(new java.util.zip.ZipEntry("images/" + f.getName()));
+                        FileInputStream fis = new FileInputStream(f);
+                        byte[] buf = new byte[1024]; int len;
+                        while ((len = fis.read(buf)) > 0) zos.write(buf, 0, len);
+                        fis.close(); zos.closeEntry();
+                    }
+                }
+            }
+            zos.finish();
+            zos.flush();
+            zos.close(); // writes GCM tag via cos before closing
+            cos.close();
+        } catch (Exception e) {
+            throw new Exception("Backup encryption failed: " + e.getMessage(), e);
+        }
+    }
+
+    // === GOOGLE DRIVE BACKUP CRYPTO v2 — RESTORE (DECRYPT) ===
+    // Reads a v2 backup from `in`: validates header, unwraps the Master Key with the account-derived KEK,
+    // then AES-256-GCM decrypts the payload into a zip. Throws on any failure (corrupted/tampered/wrong account).
+    // The cloud backup file is NEVER deleted or modified by this path.
+    private byte[] performBackupRestoreV2(InputStream in, String accountId) throws Exception {
+        byte[] header = new byte[BACKUP_HEADER_SIZE];
+        int readTotal = 0;
+        while (readTotal < BACKUP_HEADER_SIZE) {
+            int r = in.read(header, readTotal, BACKUP_HEADER_SIZE - readTotal);
+            if (r < 0) break;
+            readTotal += r;
+        }
+        if (readTotal < BACKUP_HEADER_SIZE) throw new Exception("Backup file too small or truncated");
+
+        java.util.HashMap<String, Object> parsed = parseBackupHeader(header);
+        byte[] salt = (byte[]) parsed.get("salt");
+        byte[] wrapNonce = (byte[]) parsed.get("wrapNonce");
+        byte[] wrappedKey = (byte[]) parsed.get("wrappedKey");
+        byte[] dataNonce = (byte[]) parsed.get("dataNonce");
+
+        SecretKey kek = deriveKekFromAccountId(accountId, salt);
+        SecretKey masterKey;
+        try {
+            masterKey = unwrapBackupMasterKey(kek, wrapNonce, wrappedKey);
+        } catch (Exception e) {
+            // Master-key unwrap GCM tag failure = wrong KEK (account-derived key mismatch)
+            // or tampered wrapped-key bytes. Re-throw with a distinguishable message.
+            throw new Exception("Backup could not be decrypted: account-derived key mismatch. Sign in with the same Google account that created the backup.", e);
         }
 
-        // Use the hardware-bound key itself for maximum security
-        return ((KeyStore.SecretKeyEntry) ks.getEntry(BACKUP_SECRET_ALIAS, null)).getSecretKey();
+        Cipher dataCipher = Cipher.getInstance(ALGO_GCM);
+        dataCipher.init(Cipher.DECRYPT_MODE, masterKey, new GCMParameterSpec(TAG_LENGTH, dataNonce));
+        // Do NOT use CipherInputStream for GCM — it skips the final doFinal(), so the auth tag is
+        // never verified (known Android bug, also noted elsewhere in this file). Read all ciphertext
+        // and call doFinal() explicitly so corrupted/tampered backups are rejected.
+        java.io.ByteArrayOutputStream encBaos = new java.io.ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        int len;
+        while ((len = in.read(buf)) > 0) encBaos.write(buf, 0, len);
+        try {
+            return dataCipher.doFinal(encBaos.toByteArray());
+        } catch (Exception e) {
+            // Payload/data GCM tag failure = corrupted or incomplete backup data.
+            throw new Exception("Backup data appears to be corrupted or incomplete.", e);
+        }
     }
 
     private void setupAdapters() {
@@ -1862,19 +2193,20 @@ public class MainActivity extends AppCompatActivity {
         enablePrivacyScreen(); // SECURE: Protect PIN entry from screenshots/recording
         final EditText input = new EditText(this);
         input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
-        input.setHint("Set 4-digit PIN");
+        input.setHint("Set 4-8 digit PIN");
+        input.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(8)});
         new AlertDialog.Builder(this)
                 .setTitle("Lock with PIN")
                 .setView(input)
                 .setPositiveButton("Lock", (d, w) -> {
                     disablePrivacyScreen();
                     String pin = input.getText().toString().trim();
-                    if (pin.length() >= 4) {
+                    if (pin.matches("\\d{4,8}")) {
                         note.put("isLocked", "true");
                         note.put("pin", hashPIN(pin)); // SECURE: Store Hash, not Plaintext
                         note.put("modified_at", String.valueOf(System.currentTimeMillis()));
                         saveNotesToStorage(); filterNotes(""); uploadBackupToDriveBackground(false);
-                    } else Toast.makeText(this, "PIN too short", Toast.LENGTH_SHORT).show();
+                    } else Toast.makeText(this, "PIN must be 4-8 digits only", Toast.LENGTH_SHORT).show();
                 }).setNegativeButton("Cancel", (d, w) -> disablePrivacyScreen()).show();
     }
 
@@ -2008,7 +2340,8 @@ public class MainActivity extends AppCompatActivity {
     private void showPinDialog(HashMap<String, String> n) {
         final EditText input = new EditText(this);
         input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
-        input.setHint("Enter 4-digit PIN");
+        input.setHint("Enter 4-8 digit PIN");
+        input.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(8)});
 
         // Add some padding to the EditText for better UI
         FrameLayout container = new FrameLayout(this);
@@ -2136,6 +2469,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void closeNoteScreen() {
+        noteDupLog("closeNoteScreen", "allNotesListSizeBefore=" + allNotesList.size());
         // HIDE KEYBOARD
         android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
         android.view.View focusView = getCurrentFocus();
@@ -2172,8 +2506,22 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void saveCurrentNote() {
+        noteDupLog("saveCurrentNote-entry", "allNotesListSizeBefore=" + allNotesList.size()
+                + " isNewBranchCandidate=" + (currentEditingNoteId == null));
         if (layoutSearchInNote != null && layoutSearchInNote.getVisibility() == View.VISIBLE) {
             clearSearchHighlights();
+        }
+
+        // BugFix: Never auto-create a new note from a hidden editor.
+        // After Activity recreation (e.g. theme toggle -> recreate()), Android's
+        // view-state restoration repopulates the hidden title/body EditTexts with
+        // the previous note's text while currentEditingNoteId has been reset to
+        // null. Without this guard the debounced auto-save would NEWBRANCH a
+        // duplicate note on every recreation (observed 1 -> 2 -> 3 -> 4 -> 5).
+        if (currentEditingNoteId == null
+                && (screenAddNote == null
+                || screenAddNote.getVisibility() != View.VISIBLE)) {
+            return;
         }
 
         String t = editTitle.getText().toString().trim();
@@ -2195,9 +2543,12 @@ public class MainActivity extends AppCompatActivity {
                 n.put("parentId", "root");
                 n.put("level", "1");
             }
+            noteDupLog("saveCurrentNote-NEWBRANCH", "generatedId=" + newId + " listSizeBeforeInsert=" + allNotesList.size());
             allNotesList.add(0, n); // NEW NOTE ONLY
+            noteDupLog("saveCurrentNote-NEWBRANCH", "generatedId=" + newId + " listSizeAfterInsert=" + allNotesList.size());
         } else {
             // UPDATE EXISTING NOTE
+            noteDupLog("saveCurrentNote-UPDATEBRANCH", "updatingId=" + currentEditingNoteId + " listSize=" + allNotesList.size());
             for (HashMap<String, String> item : allNotesList) {
                 if (currentEditingNoteId.equals(item.get("id"))) {
                     n = item;
@@ -2224,10 +2575,21 @@ public class MainActivity extends AppCompatActivity {
             n.put("pin", currentNotePin);
             n.put("color", currentNoteColor);
             // IMAGE PATH ENCRYPTION: currentImagePaths plain hain memory mein,
-            // JSON mein encrypt karke store karo
+            // JSON mein encrypt karke store karo.
+            // BugFix: Agar editor hidden hai (Activity recreation ke baad auto-save)
+            // aur currentImagePaths khali hai, toh persisted images list ko overwrite
+            // mat karo. Theme change par currentImagePaths reset ho jaata hai, aur
+            // saveCurrentNote() tab images="[]" likh kar updateImagePathInStorage() ke
+            // webp reference ko erase kar deta tha; phir onStop() orphan cleanup webp
+            // file delete kar deta tha. Visible-editor deletions (user intent) abhi
+            // bhi kaam karengi kyunki wahan visibility == VISIBLE hai.
             JSONArray _encImgs = new JSONArray();
-            for (String _imgP : currentImagePaths) { _encImgs.put(encryptImagePath(_imgP)); }
-            n.put("images", _encImgs.toString());
+            boolean _editorHidden = (screenAddNote == null || screenAddNote.getVisibility() != View.VISIBLE);
+            if (!currentImagePaths.isEmpty() || !_editorHidden) {
+                for (String _imgP : currentImagePaths) { _encImgs.put(encryptImagePath(_imgP)); }
+                n.put("images", _encImgs.toString());
+            }
+            // else: hidden editor + empty list → note ki existing images field preserve hoti hai
             // FIX: storageMode yahan "plain" mat set karo.
             // saveNotesToStorage() encryption succeed hone par applyStorageModeToAllNotes("encrypted")
             // call karega. Agar yahan "plain" force karein toh existing encrypted notes
@@ -2277,13 +2639,15 @@ public class MainActivity extends AppCompatActivity {
 
         executor.execute(() -> {
             try {
-                // ACCOUNT-DERIVED KEY FIX: Use account ID derived key for auto-sync
+                // v2: random master key wrapped by account-derived KEK
                 com.google.android.gms.auth.api.signin.GoogleSignInAccount syncAccount =
                         com.google.android.gms.auth.api.signin.GoogleSignIn.getLastSignedInAccount(this);
                 if (syncAccount == null || syncAccount.getId() == null) return;
 
                 java.io.File tempFile = new java.io.File(getCacheDir(), "auto_sync.qnb");
-                performExportSyncWithKey(Uri.fromFile(tempFile), getAccountDerivedKey(syncAccount.getId()));
+                java.io.FileOutputStream fos = new java.io.FileOutputStream(tempFile);
+                performBackupExportV2(fos, syncAccount.getId());
+                fos.close();
                 File fileMetadata = new File().setName("GoNotesPro_Backup.qnb").setParents(java.util.Collections.singletonList("appDataFolder"));
                 FileContent mediaContent = new FileContent("application/octet-stream", tempFile);
 
@@ -2626,6 +2990,10 @@ public class MainActivity extends AppCompatActivity {
 
     private void saveNotesToStorage() {
         try {
+            noteDupLog("saveNotesToStorage", "persistingCount=" + allNotesList.size());
+            for (HashMap<String, String> note : allNotesList) {
+                noteDupLog("saveNotesToStorage-note", "noteId=" + note.get("id") + " noteTitle=" + note.get("title"));
+            }
             JSONArray encryptedArr = new JSONArray();
             JSONArray plainArr = new JSONArray();
             for (HashMap<String, String> note : allNotesList) {
@@ -2706,18 +3074,34 @@ public class MainActivity extends AppCompatActivity {
                 JSONObject noteObj = arr.getJSONObject(i);
                 if (!noteId.equals(noteObj.optString("id"))) continue;
                 String imagesJson = noteObj.optString("images", null);
-                if (imagesJson == null || imagesJson.isEmpty()) break;
-                JSONArray imgs = new JSONArray(imagesJson);
+                JSONArray imgs = new JSONArray();
+                if (imagesJson != null && !imagesJson.isEmpty() && !imagesJson.equals("[]")) {
+                    imgs = new JSONArray(imagesJson);
+                }
                 JSONArray updated = new JSONArray();
+                boolean replaced = false;
+                boolean alreadyHasNew = false;
+                String encNew = encryptImagePath(newPath);
                 for (int j = 0; j < imgs.length(); j++) {
                     String p = imgs.getString(j);
                     String plain = decryptImagePath(p);
                     if (oldPath.equals(p) || oldPath.equals(plain)) {
-                        updated.put(encryptImagePath(newPath)); // naya webp path encrypt karke store
+                        // Replace the temporary URI with the final webp path.
+                        updated.put(encNew);
+                        replaced = true;
                         changed = true;
                     } else {
-                        updated.put(p); // baaki paths as-is
+                        // Preserve every existing image as-is.
+                        if (encNew.equals(p) || newPath.equals(plain)) alreadyHasNew = true;
+                        updated.put(p);
                     }
+                }
+                if (!replaced && !alreadyHasNew) {
+                    // The note was saved before this image was added (conversion
+                    // finished after Back) — append the final path, never drop
+                    // existing images, never duplicate.
+                    updated.put(encNew);
+                    changed = true;
                 }
                 if (changed) {
                     noteObj.put("images", updated.toString());
@@ -2727,7 +3111,7 @@ public class MainActivity extends AppCompatActivity {
             }
 
             if (!changed) {
-                android.util.Log.d("NoteStorage", "updateImagePathInStorage: note " + noteId + " — path not found, skip");
+                android.util.Log.d("NoteStorage", "updateImagePathInStorage: note " + noteId + " — no change, skip");
                 return;
             }
 
@@ -2776,6 +3160,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void loadNotesFromStorage() {
+        noteDupLog("loadNotesFromStorage-start", "countBeforeClear=" + allNotesList.size()
+                + " hasSecure=" + (getSharedPreferences("MyNotesData", MODE_PRIVATE).getString("notes_json_secure", null) != null)
+                + " hasPlain=" + (getSharedPreferences("MyNotesData", MODE_PRIVATE).getString("notes_json", null) != null));
         SharedPreferences sp = getSharedPreferences("MyNotesData", MODE_PRIVATE);
         String secureData = sp.getString("notes_json_secure", null);
         String plainJson  = sp.getString("notes_json", null);
@@ -2871,7 +3258,10 @@ public class MainActivity extends AppCompatActivity {
                 // notes_json_secure se load ho raha hai toh "encrypted" milna chahiye.
                 m.put("storageMode", storageMode);
                 tempNotes.add(m);
+                noteDupLog("loadNotesFromJson-note", "storageMode=" + storageMode + " jsonCount=" + a.length()
+                        + " noteId=" + m.get("id") + " noteTitle=" + m.get("title"));
             }
+            noteDupLog("loadNotesFromJson", "storageMode=" + storageMode + " loadedCount=" + tempNotes.size() + " beforeClear=" + allNotesList.size());
             allNotesList.clear();
             allNotesList.addAll(tempNotes);
         } catch (Exception e) {
@@ -2904,8 +3294,15 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void toggleTheme() {
+        noteDupLog("toggleTheme-start", "currentMode=" + AppCompatDelegate.getDefaultNightMode());
         int currentMode = AppCompatDelegate.getDefaultNightMode();
-        int newMode = (currentMode == AppCompatDelegate.MODE_NIGHT_YES) ? AppCompatDelegate.MODE_NIGHT_NO : AppCompatDelegate.MODE_NIGHT_YES;
+        // FOLLOW_SYSTEM ko actual UI mode ke hisaab se resolve karo, taaki
+        // pehle toggle par bhi sahi opposite theme apply ho (kabhi no-op na ho).
+        boolean isDark = (currentMode == AppCompatDelegate.MODE_NIGHT_YES) ||
+                (currentMode == AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM &&
+                 (getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+                         == android.content.res.Configuration.UI_MODE_NIGHT_YES);
+        int newMode = isDark ? AppCompatDelegate.MODE_NIGHT_NO : AppCompatDelegate.MODE_NIGHT_YES;
 
         // Save the new theme preference
         getSharedPreferences("MyNotesData", MODE_PRIVATE).edit().putInt("theme_mode", newMode).apply();
@@ -2914,6 +3311,7 @@ public class MainActivity extends AppCompatActivity {
         AppCompatDelegate.setDefaultNightMode(newMode);
 
         // Recreate to ensure all ?attr colors are freshly applied
+        noteDupLog("toggleTheme-beforeRecreate", "newMode=" + newMode);
         recreate();
     }
     private void showBackupRestoreDialog() {
@@ -2992,14 +3390,30 @@ public class MainActivity extends AppCompatActivity {
         container.addView(title);
 
         TextView msg = new TextView(this);
-        msg.setText("Version 1.0.0\n\n" +
+        String policyUrl = "https://nishuapps.github.io/privacy-policy.html";
+        String contactEmail = "nishuapps.dev@gmail.com";
+        android.text.SpannableString spannable = new android.text.SpannableString(
+                "Version 1.0.0\n\n" +
                 "Developed by Nishu Apps\n" +
                 "A fast, secure, and encrypted notes app with Google Drive sync.\n\n" +
-                "Privacy Policy: https://nishuapps.com/privacy\n" +
-                "Contact: support@nishuapps.com");
+                "Privacy Policy: " + policyUrl + "\n" +
+                "Contact: " + contactEmail);
+        int linkStart = spannable.toString().indexOf(policyUrl);
+        if (linkStart >= 0) {
+            spannable.setSpan(new android.text.style.URLSpan(policyUrl), linkStart,
+                    linkStart + policyUrl.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        int emailStart = spannable.toString().indexOf(contactEmail);
+        if (emailStart >= 0) {
+            spannable.setSpan(new android.text.style.URLSpan("mailto:" + contactEmail), emailStart,
+                    emailStart + contactEmail.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        msg.setText(spannable);
+        msg.setMovementMethod(android.text.method.LinkMovementMethod.getInstance());
         msg.setTextSize(14);
         msg.setLineSpacing(0, 1.3f);
         msg.setTextColor(ContextCompat.getColor(this, R.color.secondaryTextColor));
+        msg.setLinkTextColor(ContextCompat.getColor(this, R.color.primaryTextColor));
         container.addView(msg);
 
         Button btnOk = new Button(this);
@@ -3042,8 +3456,34 @@ public class MainActivity extends AppCompatActivity {
                     .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL)
                     .build());
         } else {
-            // SECURE FALLBACK: Require PIN if biometrics unavailable (GNPRO-05 Fix)
-            showWipeConfirmationDialog();
+            // CASE 2 — Device authentication not available. Decide based on note PIN protection.
+            // A note is PIN-protected when isLocked == "true" (same predicate as the PIN dialog).
+            boolean hasLockedNote = false;
+            for (HashMap<String, String> n : allNotesList) {
+                if ("true".equals(n.get("isLocked"))) { hasLockedNote = true; break; }
+            }
+
+            if (hasLockedNote) {
+                // CASE 2A — At least one PIN-protected note: require an existing locked-note PIN.
+                showWipeConfirmationDialog();
+            } else {
+                // CASE 2B — No PIN-protected note found in memory.
+                // SECURITY: An empty in-memory list does NOT prove there are no notes.
+                // If note data exists on disk but failed to load/decrypt, we cannot verify
+                // that no PIN exists — block the wipe instead of bypassing authentication.
+                SharedPreferences sp = getSharedPreferences("MyNotesData", MODE_PRIVATE);
+                String secureData = sp.getString("notes_json_secure", null);
+                String plainJson = sp.getString("notes_json", null);
+                boolean notesDataExists = (secureData != null && !secureData.isEmpty())
+                        || (plainJson != null && !plainJson.isEmpty());
+                if (allNotesList.isEmpty() && notesDataExists) {
+                    Toast.makeText(this, "Notes could not be loaded, so the data could not be verified. Please restart the app and try again.", Toast.LENGTH_LONG).show();
+                } else {
+                    // Genuine zero-note state, or notes loaded with no PIN protection:
+                    // no existing authentication factor to request — allow the wipe directly.
+                    performAdvancedDelete();
+                }
+            }
         }
     }
 
@@ -3051,6 +3491,7 @@ public class MainActivity extends AppCompatActivity {
         final EditText input = new EditText(this);
         input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
         input.setHint("Enter any locked note's PIN");
+        input.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(8)});
 
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle("Confirm Account Deletion")
@@ -3066,7 +3507,9 @@ public class MainActivity extends AppCompatActivity {
                             authorized = true; break;
                         }
                     }
-                    if (authorized || allNotesList.isEmpty()) performAdvancedDelete();
+                    // SECURITY: Never bypass authorization just because the in-memory list is empty.
+                    // An empty list can also mean notes failed to load/decrypt — auth must still be required.
+                    if (authorized) performAdvancedDelete();
                     else Toast.makeText(this, "Authorization failed", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("Cancel", null)
@@ -3134,51 +3577,47 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    // Synchronous local data wipe. Must run on the executor thread (called by performAdvancedDelete's
+    // single background task) or on the main thread; must NOT create any UI component here.
     private void deleteLocalData(boolean restart) {
-        final android.app.ProgressDialog pd = new android.app.ProgressDialog(this);
-        pd.setMessage("Wiping local data...");
-        if (restart) pd.show();
+        // 1. CLEAR LOCAL LIST
+        allNotesList.clear();
+        // 2. CLEAR PREFS
+        getSharedPreferences("MyNotesData", MODE_PRIVATE).edit().clear().commit();
+        getSharedPreferences("MyNotesAlarms", MODE_PRIVATE).edit().clear().commit();
+        getSharedPreferences("SecureConfig", MODE_PRIVATE).edit().clear().commit();
 
-        executor.execute(() -> {
-            // 1. CLEAR LOCAL LIST
-            allNotesList.clear();
-            // 2. CLEAR PREFS
-            getSharedPreferences("MyNotesData", MODE_PRIVATE).edit().clear().commit();
-            getSharedPreferences("MyNotesAlarms", MODE_PRIVATE).edit().clear().commit();
-            getSharedPreferences("SecureConfig", MODE_PRIVATE).edit().clear().commit();
+        // 3. CANCEL ALARMS
+        AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+        if (am != null) {
+            // Since we don't have a list of all requestCodes easily, we rely on the registry wipe
+            // and the fact that the app will restart. For a thorough wipe, one might need more logic,
+            // but clearing "MyNotesAlarms" stops BootReceiver from rescheduling them.
+        }
 
-            // 3. CANCEL ALARMS
-            AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
-            if (am != null) {
-                // Since we don't have a list of all requestCodes easily, we rely on the registry wipe
-                // and the fact that the app will restart. For a thorough wipe, one might need more logic,
-                // but clearing "MyNotesAlarms" stops BootReceiver from rescheduling them.
-            }
+        // 4. DELETE FILES
+        java.io.File filesDir = getFilesDir();
+        if (filesDir != null && filesDir.listFiles() != null) {
+            for (java.io.File f : filesDir.listFiles()) f.delete();
+        }
+        java.io.File cacheDir = getCacheDir();
+        if (cacheDir != null && cacheDir.listFiles() != null) {
+            for (java.io.File f : cacheDir.listFiles()) f.delete();
+        }
 
-            // 4. DELETE FILES
-            java.io.File filesDir = getFilesDir();
-            if (filesDir != null && filesDir.listFiles() != null) {
-                for (java.io.File f : filesDir.listFiles()) f.delete();
-            }
-            java.io.File cacheDir = getCacheDir();
-            if (cacheDir != null && cacheDir.listFiles() != null) {
-                for (java.io.File f : cacheDir.listFiles()) f.delete();
-            }
-
-            if (restart) {
-                mainHandler.post(() -> {
-                    pd.dismiss();
-                    Toast.makeText(this, "Local data wiped. Restarting...", Toast.LENGTH_LONG).show();
-                    mainHandler.postDelayed(() -> {
-                        Intent intent = getBaseContext().getPackageManager().getLaunchIntentForPackage(getBaseContext().getPackageName());
-                        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
-                        startActivity(intent);
-                        finish();
-                        Runtime.getRuntime().exit(0);
-                    }, 1500);
-                });
-            }
-        });
+        // Legacy callers that expected a self-contained restart flow: keep it, but route UI through main thread.
+        if (restart) {
+            mainHandler.post(() -> {
+                Toast.makeText(this, "Local data wiped. Restarting...", Toast.LENGTH_LONG).show();
+                mainHandler.postDelayed(() -> {
+                    Intent intent = getBaseContext().getPackageManager().getLaunchIntentForPackage(getBaseContext().getPackageName());
+                    intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+                    finish();
+                    Runtime.getRuntime().exit(0);
+                }, 1500);
+            });
+        }
     }
 
     private void performAdvancedDelete() {
@@ -3188,8 +3627,14 @@ public class MainActivity extends AppCompatActivity {
         pd.show();
 
         executor.execute(() -> {
+            // Tracks whether local deletion completed, so a later cloud failure can be reported accurately.
+            final boolean[] localDeleted = {false};
             try {
-                // 1. Cloud Deletion
+                // 1. LOCAL DELETION FIRST — if this fails, cloud must NOT be touched.
+                deleteLocalData(false);
+                localDeleted[0] = true;
+
+                // 2. CLOUD DELETION — only after local deletion succeeded.
                 if (driveService != null) {
                     FileList result = driveService.files().list().setSpaces("appDataFolder").execute();
                     if (result.getFiles() != null) {
@@ -3201,9 +3646,7 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
 
-                // 2. Local Deletion (No restart yet)
-                deleteLocalData(false);
-
+                // 3. SUCCESS — only reached when BOTH operations succeeded.
                 mainHandler.post(() -> {
                     pd.dismiss();
                     Toast.makeText(this, "Account and data permanently deleted.", Toast.LENGTH_LONG).show();
@@ -3216,9 +3659,15 @@ public class MainActivity extends AppCompatActivity {
                     }, 1500);
                 });
             } catch (Exception e) {
+                e.printStackTrace();
+                final boolean localWasDeleted = localDeleted[0];
                 mainHandler.post(() -> {
                     pd.dismiss();
-                    Toast.makeText(this, "Wipe failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    if (localWasDeleted) {
+                        Toast.makeText(this, "Local data was deleted, but cloud backup could not be deleted.", Toast.LENGTH_LONG).show();
+                    } else {
+                        Toast.makeText(this, "Local data deletion failed. Your cloud backup was not deleted.", Toast.LENGTH_LONG).show();
+                    }
                 });
             }
         });
@@ -3519,10 +3968,16 @@ public class MainActivity extends AppCompatActivity {
             layoutSpeedDial.setTranslationY(100f);
             layoutSpeedDial.animate().alpha(1f).translationY(0f).setDuration(200).start();
         } else {
-            viewFabOverlay.animate().alpha(0f).setDuration(200).withEndAction(() -> viewFabOverlay.setVisibility(View.GONE)).start();
-            buttonPlus.animate().rotation(0f).setDuration(200).start();
+            // Cancel any running animations first so state changes are immediate.
+            // This prevents the speed dial from visually sliding away after the
+            // editor/dialog screen has already opened on top of it.
+            layoutSpeedDial.animate().cancel();
+            viewFabOverlay.animate().cancel();
+            buttonPlus.animate().cancel();
 
-            layoutSpeedDial.animate().alpha(0f).translationY(100f).setDuration(200).withEndAction(() -> layoutSpeedDial.setVisibility(View.GONE)).start();
+            layoutSpeedDial.setVisibility(View.GONE);
+            viewFabOverlay.setVisibility(View.GONE);
+            buttonPlus.setRotation(0f);
         }
     }
 
@@ -3608,6 +4063,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void createNewNote(String type) {
+        noteDupLog("createNewNote", "noteType=" + type + " allNotesListSizeBefore=" + allNotesList.size());
         saveNavigationState(); // Capture where user came from before entering editor
         currentEditingNoteId = null;
         editTitle.setText("");
@@ -3808,6 +4264,10 @@ public class MainActivity extends AppCompatActivity {
                     // Remove pending saves and schedule a new one after 2 seconds of inactivity
                     mainHandler.removeCallbacks(autoSaveRunnable);
                     mainHandler.postDelayed(autoSaveRunnable, 2000);
+                    noteDupLog("autoSave-SCHEDULED", "currentEditingNoteId=" + currentEditingNoteId
+                            + " title=" + editTitle.getText().toString()
+                            + " bodyLen=" + editNoteBody.getText().length()
+                            + " nonEmpty=" + !(editTitle.getText().toString().trim().isEmpty() && editNoteBody.getText().toString().trim().isEmpty()));
                 }
             }
             @Override public void afterTextChanged(android.text.Editable s) {}
@@ -4017,7 +4477,7 @@ public class MainActivity extends AppCompatActivity {
             } else if (title.equals("Delete Note")) {
                 moveCurrentNoteToBin();
             } else if (title.equals("Share as Text")) {
-                shareNoteAsText();
+                shareNoteAsText(editTitle.getText().toString(), editNoteBody.getText().toString());
             } else if (title.equals("Share as PDF")) {
                 shareNoteAsPdf();
             }
@@ -4026,12 +4486,34 @@ public class MainActivity extends AppCompatActivity {
         popup.show();
     }
 
-    private void shareNoteAsText() {
+    private void shareNoteAsText(String title, String body) {
         Intent sendIntent = new Intent();
         sendIntent.setAction(Intent.ACTION_SEND);
-        sendIntent.putExtra(Intent.EXTRA_TEXT, editTitle.getText().toString() + "\n\n" + editNoteBody.getText().toString());
+        sendIntent.putExtra(Intent.EXTRA_TEXT, title + "\n\n" + body);
         sendIntent.setType("text/plain");
         startActivity(Intent.createChooser(sendIntent, "Share note via"));
+    }
+
+    // Read-only: note ke stored "images" JSON ko decrypt karke plain file paths
+    // return karo (sirf wahi jo disk pe exist karti hain). Note state ko modify
+    // nahi karta — sirf PDF generation ke liye image paths nikaalta hai.
+    private ArrayList<String> resolveStoredImagePaths(HashMap<String, String> note) {
+        ArrayList<String> paths = new ArrayList<>();
+        if (note == null) return paths;
+        String imagesJson = note.get("images");
+        if (imagesJson == null || imagesJson.isEmpty() || imagesJson.equals("[]")) return paths;
+        try {
+            JSONArray arr = new JSONArray(imagesJson);
+            for (int i = 0; i < arr.length(); i++) {
+                String path = arr.getString(i);
+                String plainPath = decryptImagePath(path);
+                if (plainPath == null) continue;
+                if (plainPath.startsWith("content://") || new java.io.File(plainPath).exists()) {
+                    paths.add(plainPath);
+                }
+            }
+        } catch (Exception e) { e.printStackTrace(); }
+        return paths;
     }
 
     private void showCategoryPicker() {
@@ -4071,6 +4553,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void shareNoteAsPdf() {
+        shareNoteAsPdf(editTitle.getText().toString(), editNoteBody.getText().toString(), currentImagePaths);
+    }
+
+    private void shareNoteAsPdf(String title, String body, ArrayList<String> imagePaths) {
         try {
             android.graphics.pdf.PdfDocument document = new android.graphics.pdf.PdfDocument();
             int pageWidth = 595; // A4 Standard
@@ -4090,15 +4576,15 @@ public class MainActivity extends AppCompatActivity {
             // Draw Title
             paint.setTextSize(22);
             paint.setFakeBoldText(true);
-            String title = editTitle.getText().toString().isEmpty() ? "Untitled Note" : editTitle.getText().toString();
-            canvas.drawText(title, x, y, paint);
+            String safeTitle = (title == null || title.isEmpty()) ? "Untitled Note" : title;
+            canvas.drawText(safeTitle, x, y, paint);
             y += 40;
 
             paint.setTextSize(12);
             paint.setFakeBoldText(false);
 
             // DRAW NOTE BODY TEXT
-            String content = editNoteBody.getText().toString();
+            String content = body == null ? "" : body;
             String[] lines = content.split("\n");
 
             for (String line : lines) {
@@ -4124,9 +4610,9 @@ public class MainActivity extends AppCompatActivity {
             // FIX: Images note body mein [[IMG:...]] format mein nahi hoti —
             // woh currentImagePaths list mein hoti hain (plain paths, already decrypted).
             // Text ke baad saari images draw karo.
-            if (!currentImagePaths.isEmpty()) {
+            if (imagePaths != null && !imagePaths.isEmpty()) {
                 y += 20; // Text aur images ke beech gap
-                for (String imgPath : currentImagePaths) {
+                for (String imgPath : imagePaths) {
                     try {
                         android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeFile(imgPath);
                         if (bitmap != null) {
@@ -4242,7 +4728,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void clearSearchHighlights() {
-        lastSearchInNoteIndex = -1;
         searchInNoteMatchIndices.clear();
         currentSearchInNoteMatchPos = -1;
         if (textSearchInNoteCount != null) textSearchInNoteCount.setText("0/0");
@@ -4497,7 +4982,8 @@ public class MainActivity extends AppCompatActivity {
         } else {
             final EditText input = new EditText(this);
             input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
-            input.setHint("Enter 4-digit PIN");
+            input.setHint("Enter 4-8 digit PIN");
+            input.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(8)});
             input.setPadding(50, 50, 50, 50);
 
             new AlertDialog.Builder(this)
@@ -4506,14 +4992,14 @@ public class MainActivity extends AppCompatActivity {
                     .setView(input)
                     .setPositiveButton("Lock", (d, w) -> {
                         String pin = input.getText().toString().trim();
-                        if (pin.length() >= 4) {
+                        if (pin.matches("\\d{4,8}")) {
                             isCurrentNoteLocked = true;
                             currentNotePin = hashPIN(pin); // SECURE: Hash before saving
                             updateEditorToolbarIcons();
                             Toast.makeText(this, "Note locked with PIN", Toast.LENGTH_SHORT).show();
                             saveCurrentNote(); // Save PIN immediately
                         } else {
-                            Toast.makeText(this, "PIN must be at least 4 digits", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(this, "PIN must be 4-8 digits only", Toast.LENGTH_SHORT).show();
                         }
                     })
                     .setNegativeButton("Cancel", null)
@@ -4771,10 +5257,22 @@ public class MainActivity extends AppCompatActivity {
 
     private void checkCameraPermissionAndOpen() {
         if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{android.Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST);
+            showCameraPermissionDisclosure();
         } else {
             openCamera();
         }
+    }
+
+    // P-01 Fix: Prominent in-app disclosure shown BEFORE the runtime CAMERA permission request.
+    // Flow: Take Photo -> disclosure -> Continue -> Android CAMERA prompt -> openCamera().
+    private void showCameraPermissionDisclosure() {
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle("Camera Permission")
+                .setMessage("GoNotes uses your camera to attach photos to your notes. Photos are stored securely on your device and may be backed up to your Google Drive when backup is enabled.")
+                .setPositiveButton("Continue", (d, w) ->
+                        ActivityCompat.requestPermissions(this, new String[]{android.Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST))
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     @Override
@@ -4836,26 +5334,31 @@ public class MainActivity extends AppCompatActivity {
                     if (noteId.equals(note.get("id"))) {
                         try {
                             String imagesJson = note.get("images");
-                            if (imagesJson != null) {
-                                JSONArray arr = new JSONArray(imagesJson);
-                                JSONArray updated = new JSONArray();
-                                boolean changed = false;
-                                for (int i = 0; i < arr.length(); i++) {
-                                    String p = arr.getString(i);
-                                    // Decrypt karo compare ke liye (JSON mein encrypted ho sakta hai)
-                                    String plainP = decryptImagePath(p);
-                                    if (tempId.equals(p) || tempId.equals(plainP)) {
-                                        updated.put(encryptImagePath(realPath)); // naya path encrypt karke store
-                                        changed = true;
-                                    } else {
-                                        updated.put(p); // pehle se encrypted — as-is rakho
-                                    }
-                                }
-                                if (changed) {
-                                    note.put("images", updated.toString());
-                                    saveNotesToStorage(); // real path disk pe save karo
+                            JSONArray arr = new JSONArray();
+                            if (imagesJson != null && !imagesJson.isEmpty() && !imagesJson.equals("[]")) {
+                                arr = new JSONArray(imagesJson);
+                            }
+                            JSONArray updated = new JSONArray();
+                            boolean replaced = false;
+                            boolean alreadyHasNew = false;
+                            String encReal = encryptImagePath(realPath);
+                            for (int i = 0; i < arr.length(); i++) {
+                                String p = arr.getString(i);
+                                // Decrypt karo compare ke liye (JSON mein encrypted ho sakta hai)
+                                String plainP = decryptImagePath(p);
+                                if (tempId.equals(p) || tempId.equals(plainP)) {
+                                    updated.put(encReal); // naya path encrypt karke store
+                                    replaced = true;
+                                } else {
+                                    if (encReal.equals(p) || realPath.equals(plainP)) alreadyHasNew = true;
+                                    updated.put(p); // baaki paths as-is
                                 }
                             }
+                            if (!replaced && !alreadyHasNew) {
+                                updated.put(encReal);
+                            }
+                            note.put("images", updated.toString());
+                            saveNotesToStorage(); // real path disk pe save karo
                         } catch (Exception e) { e.printStackTrace(); }
                         break;
                     }
@@ -4929,6 +5432,16 @@ public class MainActivity extends AppCompatActivity {
             }
             if (selectedNoteIds.size() == 1) {
                 popup.getMenu().add("Rename");
+                // Home screen single-note Share: reuse the note's own stored title/body.
+                HashMap<String, String> singleNote = null;
+                for (HashMap<String, String> n : allNotesList) {
+                    if (selectedNoteIds.contains(n.get("id"))) { singleNote = n; break; }
+                }
+                if (singleNote != null && !"true".equals(singleNote.get("isFolder"))) {
+                    popup.getMenu().add("Share");
+                    boolean singleLocked = "true".equals(singleNote.get("isLocked"));
+                    popup.getMenu().add(singleLocked ? "Unlock" : "Lock");
+                }
             }
         }
 
@@ -4938,6 +5451,50 @@ public class MainActivity extends AppCompatActivity {
             else if (title.equals("Pin/Unpin")) togglePinSelected();
             else if (title.equals("Move to Folder")) showMoveDialog();
             else if (title.equals("Rename")) showRenameDialog();
+            else if (title.equals("Share")) {
+                // Share the single selected note using its own stored title/fullBody/images.
+                HashMap<String, String> singleNote = null;
+                for (HashMap<String, String> n : allNotesList) {
+                    if (selectedNoteIds.contains(n.get("id"))) { singleNote = n; break; }
+                }
+                if (singleNote != null) {
+                    final HashMap<String, String> noteToShare = singleNote;
+                    new AlertDialog.Builder(this)
+                            .setTitle("Share Note")
+                            .setItems(new String[]{"Share as Text", "Share as PDF"}, (d, w) -> {
+                                if (w == 0) {
+                                    shareNoteAsText(noteToShare.get("title") != null ? noteToShare.get("title") : "",
+                                            noteToShare.get("fullBody") != null ? noteToShare.get("fullBody") : "");
+                                } else if (w == 1) {
+                                    shareNoteAsPdf(noteToShare.get("title") != null ? noteToShare.get("title") : "",
+                                            noteToShare.get("fullBody") != null ? noteToShare.get("fullBody") : "",
+                                            resolveStoredImagePaths(noteToShare));
+                                }
+                                exitSelectionMode();
+                            })
+                            .setNegativeButton("Cancel", null)
+                            .show();
+                }
+            }
+            else if (title.equals("Lock") || title.equals("Unlock")) {
+                HashMap<String, String> singleNote = null;
+                for (HashMap<String, String> n : allNotesList) {
+                    if (selectedNoteIds.contains(n.get("id"))) { singleNote = n; break; }
+                }
+                if (singleNote != null) {
+                    boolean singleLocked = "true".equals(singleNote.get("isLocked"));
+                    if (singleLocked) {
+                        singleNote.put("isLocked", "false");
+                        singleNote.put("pin", "");
+                        singleNote.put("modified_at", String.valueOf(System.currentTimeMillis()));
+                        saveNotesToStorage(); filterNotes(""); uploadBackupToDriveBackground(false);
+                        Toast.makeText(this, "Unlocked", Toast.LENGTH_SHORT).show();
+                    } else {
+                        showPinDialogForNote(singleNote);
+                    }
+                    exitSelectionMode();
+                }
+            }
             return true;
         });
         popup.show();
@@ -5314,38 +5871,6 @@ public class MainActivity extends AppCompatActivity {
         sp.edit().putStringSet("deleted_note_ids", deletedIds).apply();
     }
 
-    private SecretKey deriveKeyFromPassword(String password) throws Exception {
-        byte[] salt = "GoNotesRecoverySalt".getBytes();
-        javax.crypto.SecretKeyFactory factory = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
-        javax.crypto.spec.PBEKeySpec spec = new javax.crypto.spec.PBEKeySpec(password.toCharArray(), salt, 65536, 256);
-        return new javax.crypto.spec.SecretKeySpec(factory.generateSecret(spec).getEncoded(), "AES");
-    }
-
-    private void showRecoveryPasswordDialog(Uri uri) {
-        final EditText input = new EditText(this);
-        input.setHint("Backup Password");
-        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        input.setPadding(50, 40, 50, 40);
-
-        new AlertDialog.Builder(this)
-                .setTitle("Password Required 🔑")
-                .setMessage("Your hardware key was reset. Please enter the password you set during backup to restore your notes.")
-                .setView(input)
-                .setPositiveButton("Restore", (d, w) -> {
-                    String password = input.getText().toString();
-                    if (!password.isEmpty()) {
-                        try {
-                            SecretKey pKey = deriveKeyFromPassword(password);
-                            performImportWithKey(uri, pKey, false);
-                        } catch (Exception e) {
-                            Toast.makeText(this, "Invalid password", Toast.LENGTH_SHORT).show();
-                        }
-                    }
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
     private void loadCategories() {
         SharedPreferences sp = getSharedPreferences("MyNotesData", MODE_PRIVATE);
         String secureData = sp.getString("categories_list_secure", null);
@@ -5699,6 +6224,14 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
 
+        // TEMP DEBUG: StatusBarDebug logging only — no behavior change.
+        android.util.Log.d("StatusBarDebug", "onResume callback=onResume"
+                + " savedThemeMode=" + getSharedPreferences("MyNotesData", MODE_PRIVATE).getInt("theme_mode", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
+                + " defaultNightMode=" + AppCompatDelegate.getDefaultNightMode()
+                + " uiMode=" + getResources().getConfiguration().uiMode
+                + " systemUiVisibility=" + getWindow().getDecorView().getSystemUiVisibility()
+                + " sdk=" + android.os.Build.VERSION.SDK_INT);
+
         android.content.SharedPreferences sp = getSharedPreferences("MyNotesData", MODE_PRIVATE);
 
         // BugFix-2: One-time alarm fire ho gaya — note se alarm_time clear karo
@@ -5728,6 +6261,19 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         if (dailyChanged) { saveNotesToStorage(); } // notifyDataSetChanged inside saveNotesToStorage covers UI update
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+
+        // TEMP DEBUG: StatusBarDebug logging only — no behavior change.
+        android.util.Log.d("StatusBarDebug", "onWindowFocusChanged callback=onWindowFocusChanged"
+                + " hasFocus=" + hasFocus
+                + " defaultNightMode=" + AppCompatDelegate.getDefaultNightMode()
+                + " uiMode=" + getResources().getConfiguration().uiMode
+                + " systemUiVisibility=" + getWindow().getDecorView().getSystemUiVisibility()
+                + " sdk=" + android.os.Build.VERSION.SDK_INT);
     }
 
     protected void onStop() {
@@ -5793,6 +6339,7 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        noteDupLog("onDestroy");
         if (textToSpeech != null) {
             textToSpeech.stop();
             textToSpeech.shutdown();
@@ -5803,6 +6350,7 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onPause() {
+        noteDupLog("onPause", "editorVisible=" + (screenAddNote != null && screenAddNote.getVisibility() == View.VISIBLE));
         super.onPause();
 
         // FIX: Auto-save ke liye vault lock check hata diya — user ka note app pause pe hamesha save hoga

@@ -33,7 +33,7 @@
         android:layout_alignParentBottom="true"
         android:layout_centerHorizontal="true"
         android:layout_marginBottom="40dp"
-        android:text="🔒 End-to-End Encrypted"
+        android:text="🔒 Your notes, your privacy"
         android:textColor="@color/secondaryTextColor"
         android:textSize="14sp"
         android:letterSpacing="0.1" />

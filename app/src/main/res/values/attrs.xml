@@ -6,4 +6,5 @@
     <attr name="appSearchBackgroundColor" format="color" />
     <attr name="appDrawerBackgroundColor" format="color" />
     <attr name="appBottomBarColor" format="color" />
+    <attr name="actionBarTabTextStyle" format="reference" />
 </resources>

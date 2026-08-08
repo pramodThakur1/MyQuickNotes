@@ -57,6 +57,12 @@ android {
 }
 
 dependencies {
+    // Kotlin stdlib — explicitly declared so its classes (e.g. kotlin.collections.CollectionsKt)
+    // are reliably packaged into the DEBUG APK dex. AndroidX libraries (lifecycle/startup) resolve
+    // it transitively to 1.8.22 via their kotlin-bom; pinning it here prevents the debug-build
+    // NoClassDefFoundError at androidx.startup initialization while matching the resolved version.
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
+
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
