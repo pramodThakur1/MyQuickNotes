@@ -3682,7 +3682,7 @@ public class MainActivity extends AppCompatActivity {
                     resultMessage = "Local data deleted. Cloud backup not deleted — Google Drive not connected.";
                 } else {
                     // Drive was connected and the cloud block completed without throwing.
-                    resultMessage = "Account and data permanently deleted.";
+                    resultMessage = "Local and cloud data have been permanently deleted.";
                 }
                 final String finalResultMessage = resultMessage;
                 mainHandler.post(() -> {
