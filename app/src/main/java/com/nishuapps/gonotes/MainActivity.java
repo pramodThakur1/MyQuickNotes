@@ -3610,15 +3610,12 @@ public class MainActivity extends AppCompatActivity {
             // but clearing "MyNotesAlarms" stops BootReceiver from rescheduling them.
         }
 
-        // 4. DELETE FILES
+        // 4. DELETE FILES — recursively, so nested dirs like files/images/* are removed.
+        // File.delete() is not recursive; the old flat loop left .webp files behind.
         java.io.File filesDir = getFilesDir();
-        if (filesDir != null && filesDir.listFiles() != null) {
-            for (java.io.File f : filesDir.listFiles()) f.delete();
-        }
+        if (filesDir != null) deleteRecursively(filesDir);
         java.io.File cacheDir = getCacheDir();
-        if (cacheDir != null && cacheDir.listFiles() != null) {
-            for (java.io.File f : cacheDir.listFiles()) f.delete();
-        }
+        if (cacheDir != null) deleteRecursively(cacheDir);
 
         // Legacy callers that expected a self-contained restart flow: keep it, but route UI through main thread.
         if (restart) {
@@ -3633,6 +3630,22 @@ public class MainActivity extends AppCompatActivity {
                 }, 1500);
             });
         }
+    }
+
+    // Recursively delete a file or directory tree (children first, then parent).
+    // Only ever called with the app's own private filesDir/cacheDir roots, so it
+    // cannot touch anything outside the app's private storage.
+    private void deleteRecursively(java.io.File file) {
+        if (file == null || !file.exists()) return;
+        if (file.isDirectory()) {
+            java.io.File[] children = file.listFiles();
+            if (children != null) {
+                for (java.io.File child : children) {
+                    deleteRecursively(child);
+                }
+            }
+        }
+        file.delete();
     }
 
     private void performAdvancedDelete() {
@@ -3661,10 +3674,20 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
 
-                // 3. SUCCESS — only reached when BOTH operations succeeded.
+                // 3. RESULT — only reached when local deletion succeeded.
+                final String resultMessage;
+                if (driveService == null) {
+                    // Cloud deletion was skipped because Drive is not connected —
+                    // do NOT claim the cloud backup was deleted.
+                    resultMessage = "Local data deleted. Cloud backup not deleted — Google Drive not connected.";
+                } else {
+                    // Drive was connected and the cloud block completed without throwing.
+                    resultMessage = "Account and data permanently deleted.";
+                }
+                final String finalResultMessage = resultMessage;
                 mainHandler.post(() -> {
                     pd.dismiss();
-                    Toast.makeText(this, "Account and data permanently deleted.", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, finalResultMessage, Toast.LENGTH_LONG).show();
                     mainHandler.postDelayed(() -> {
                         Intent intent = getBaseContext().getPackageManager().getLaunchIntentForPackage(getBaseContext().getPackageName());
                         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
