@@ -4499,8 +4499,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showColorPicker() {
-        final String[] colors = {"#121212", "#FF5555", "#5555FF", "#FF55FF"};
-        final String[] names = {"Default", "Red", "Blue", "Pink"};
+        final String[] colors = {"#FF5555", "#5555FF", "#FF55FF"};
+        final String[] names = {"Red", "Blue", "Pink"};
 
         new AlertDialog.Builder(this)
                 .setTitle("Pick Note Color")
