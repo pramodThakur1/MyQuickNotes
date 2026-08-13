@@ -621,7 +621,7 @@ public class MainActivity extends AppCompatActivity {
 
         setupUI();
         setupGoogleDrive();
-        checkExistingSignIn();
+        checkExistingSignIn(savedInstanceState != null);
         loadCategories();
         setupCategoriesInDrawer();
         setupAdapters();
@@ -1073,14 +1073,19 @@ public class MainActivity extends AppCompatActivity {
         googleSignInClient = GoogleSignIn.getClient(this, gso);
     }
 
-    private void checkExistingSignIn() {
+    private void checkExistingSignIn(boolean isRecreation) {
         GoogleSignInAccount account = GoogleSignIn.getLastSignedInAccount(this);
         if (account != null) {
             initializeDriveService(account);
             updateUserInfo(account);
 
-            // If local app is empty, check for cloud data automatically
-            if (allNotesList.isEmpty()) {
+            // If local app is empty, check for cloud data automatically.
+            // Only do this on a genuine cold start: during Activity recreation
+            // (theme toggle -> recreate()) allNotesList is temporarily empty
+            // because loadNotesFromStorage() has not run yet, so an auto-restore
+            // would be a false "empty local data" signal and could download the
+            // Drive backup unnecessarily on every theme change.
+            if (!isRecreation && allNotesList.isEmpty()) {
                 downloadBackupFromDrive();
             }
         }
