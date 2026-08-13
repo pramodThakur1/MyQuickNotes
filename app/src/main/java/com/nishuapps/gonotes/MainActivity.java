@@ -639,6 +639,26 @@ public class MainActivity extends AppCompatActivity {
             // so auto-save UPDATEBRANCHes the original note instead of NEWBRANCHing
             // a duplicate. Must be set BEFORE loadNotesFromStorage()/draft restore.
             currentEditingNoteId = savedInstanceState.getString("currentEditingNoteId");
+            // BugFix: Restore editor color/lock/PIN across recreation so the note
+            // keeps its color and locked state (and the PIN still unlocks it).
+            String savedColor = savedInstanceState.getString("currentNoteColor");
+            if (savedColor != null) currentNoteColor = savedColor;
+            // Re-apply the restored color to the editor background (mirrors the
+            // openNoteContent() guard for non-default colors).
+            if (screenAddNote != null
+                    && !currentNoteColor.equals("default") && !currentNoteColor.isEmpty()
+                    && !currentNoteColor.equals("#121212") && !currentNoteColor.equals("#FFFFFF")) {
+                try {
+                    screenAddNote.setBackgroundColor(Color.parseColor(currentNoteColor));
+                } catch (Exception e) {
+                    screenAddNote.setBackgroundColor(ContextCompat.getColor(this, R.color.backgroundColor));
+                }
+            }
+            if (savedInstanceState.containsKey("isCurrentNoteLocked")) {
+                isCurrentNoteLocked = savedInstanceState.getBoolean("isCurrentNoteLocked");
+            }
+            String savedPin = savedInstanceState.getString("currentNotePin");
+            if (savedPin != null) currentNotePin = savedPin;
             String draftTitle = savedInstanceState.getString("draft_title");
             String draftBody = savedInstanceState.getString("draft_body");
             if (draftTitle != null || draftBody != null) {
@@ -674,6 +694,12 @@ public class MainActivity extends AppCompatActivity {
         // recreate() restores which note is being edited instead of resetting
         // to null (which caused a NEWBRANCH duplicate on the next auto-save).
         outState.putString("currentEditingNoteId", currentEditingNoteId);
+        // BugFix: Persist the current editor color/lock/PIN across Activity
+        // recreation (theme toggle) so the note does not lose its color or
+        // appear unlocked after recreate().
+        outState.putString("currentNoteColor", currentNoteColor);
+        outState.putBoolean("isCurrentNoteLocked", isCurrentNoteLocked);
+        outState.putString("currentNotePin", currentNotePin);
 
         // Save current typing progress as a safety draft
         if (screenAddNote.getVisibility() == View.VISIBLE) {
