@@ -4504,14 +4504,21 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showColorPicker() {
-        final String[] colors = {"#FF5555", "#5555FF", "#FF55FF"};
-        final String[] names = {"Red", "Blue", "Pink"};
+        final String[] colors = {"#FF5555", "#5555FF", "#FF55FF", "default"};
+        final String[] names = {"Red", "Blue", "Pink", "Remove Color"};
 
         new AlertDialog.Builder(this)
                 .setTitle("Pick Note Color")
                 .setItems(names, (dialog, which) -> {
-                    currentNoteColor = colors[which];
-                    screenAddNote.setBackgroundColor(Color.parseColor(currentNoteColor));
+                    if (colors[which].equals("default")) {
+                        // Remove the note's custom color: restore the existing internal
+                        // "default" state and the theme-default editor background.
+                        currentNoteColor = "default";
+                        screenAddNote.setBackgroundColor(ContextCompat.getColor(this, R.color.backgroundColor));
+                    } else {
+                        currentNoteColor = colors[which];
+                        screenAddNote.setBackgroundColor(Color.parseColor(currentNoteColor));
+                    }
                 }).show();
     }
 
